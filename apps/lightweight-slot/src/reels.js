@@ -1,40 +1,44 @@
 /**
- * reels.js — Reel grid controller (5 reels × 3 rows)
+ * reels.js — Core Reel Engine (5 × 3)
  *
- * Architecture goals for low-end Android:
- *  - Symbol sprites come from a small object pool (no per-frame `new`).
- *  - One Graphics/texture atlas path so Pixi can batch draw calls.
- *  - Frame-rate independent motion via ticker `deltaMS`.
- *  - No filters / custom shaders on the reel stage.
+ * - Pixi Containers + Sprites (texture-swapped from AssetManager pool)
+ * - spin()  → start all reels with stagger delays (reel 1 → 5)
+ * - stop(symbolGrid) → land cleanly on target symbols with ease-out + bounce
+ * - Motion blur via vertical scale (no GPU filters — mobile safe)
+ * - SymbolView object pool — zero construction during the ticker
  */
 
-import { REEL_COUNT, ROW_COUNT, SYMBOL_IDS } from './math.js';
+import { assets } from './assets.js';
+import { REEL_COUNT, ROW_COUNT } from './math.js';
 
-/** Design-space cell metrics (logical px before stage scale). */
 export const SYMBOL_W = 140;
 export const SYMBOL_H = 140;
 export const REEL_GAP = 8;
 export const ROW_GAP = 6;
 
-/** Extra off-screen symbols above the visible window for spin padding. */
+/** Off-screen pad above the visible window. */
 const SPIN_BUFFER = 1;
+/** Extra strip length below for smoother recycle during fast spins. */
+const STRIP_EXTRA = 1;
 
-/** Placeholder colour map — swap for Texture.from(atlasFrame) when assets land. */
-const SYMBOL_COLORS = Object.freeze({
-  H1: 0xe74c3c,
-  H2: 0xe67e22,
-  H3: 0xf1c40f,
-  L1: 0x2ecc71,
-  L2: 0x1abc9c,
-  L3: 0x3498db,
-  L4: 0x9b59b6,
-  WILD: 0xecf0f1,
-  SCATTER: 0xff6b9d,
-});
+const PHASE_IDLE = 0;
+const PHASE_START_WAIT = 1;
+const PHASE_SPIN = 2;
+const PHASE_STOP_WAIT = 3;
+const PHASE_LAND = 4;
+
+/** Peak spin speed (px / sec). */
+const SPIN_SPEED = 2600;
+/** Max vertical stretch used as cheap motion blur. */
+const BLUR_SCALE_Y = 1.55;
+/** Land ease duration (ms). */
+const LAND_MS = 280;
+/** Overshoot bounce (px) then settle. */
+const BOUNCE_PX = 18;
 
 /**
- * Tiny symbol view — Graphics rect + label. Designed for pooling:
- * call `configure()` to recycle; never destroy during play.
+ * Pooled symbol view — one Container + one Sprite.
+ * Recycle with `setSymbol()`; never destroy during play.
  */
 class SymbolView {
   /**
@@ -45,68 +49,65 @@ class SymbolView {
     this.container.eventMode = 'none';
     this.container.sortableChildren = false;
 
-    this.bg = new PIXI.Graphics();
-    this.label = new PIXI.Text({
-      text: '',
-      style: {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: 28,
-        fontWeight: '700',
-        fill: 0x0b1220,
-        align: 'center',
-      },
-    });
-    this.label.anchor.set(0.5);
-    this.label.eventMode = 'none';
+    this.sprite = new PIXI.Sprite(PIXI.Texture.WHITE);
+    this.sprite.anchor.set(0.5);
+    this.sprite.eventMode = 'none';
+    this.container.addChild(this.sprite);
 
-    this.container.addChild(this.bg, this.label);
-
-    /** @type {import('./math.js').SymbolId|null} */
+    /** @type {string|null} */
     this.symbolId = null;
-    this._w = SYMBOL_W;
-    this._h = SYMBOL_H;
+    this._baseScaleY = 1;
   }
 
   /**
-   * Recycle this view for a new symbol id / size.
-   * @param {import('./math.js').SymbolId} id
+   * @param {string} id
    * @param {number} [w]
    * @param {number} [h]
    */
-  configure(id, w = SYMBOL_W, h = SYMBOL_H) {
+  setSymbol(id, w = SYMBOL_W, h = SYMBOL_H) {
     this.symbolId = id;
-    this._w = w;
-    this._h = h;
-
-    const color = SYMBOL_COLORS[id] ?? 0x555555;
-    const g = this.bg;
-    g.clear();
-    g.roundRect(-w * 0.5, -h * 0.5, w, h, 10);
-    g.fill({ color, alpha: 1 });
-    g.stroke({ width: 2, color: 0x000000, alpha: 0.25 });
-
-    this.label.text = id;
-    this.label.position.set(0, 0);
+    const tex = assets.getTexture(id);
+    this.sprite.texture = tex;
+    // Fit into cell while preserving texture aspect (placeholders are square).
+    this.sprite.width = w;
+    this.sprite.height = h;
+    this._baseScaleY = this.sprite.scale.y;
     this.container.visible = true;
   }
 
-  /** Return to pool — hide, keep in memory. */
+  /**
+   * Apply / clear motion-blur stretch. `amount` in 0..1.
+   * Mutates scale only — no allocations.
+   * @param {number} amount
+   */
+  setBlur(amount) {
+    const a = amount < 0 ? 0 : amount > 1 ? 1 : amount;
+    // Preserve width scale; stretch height for directional blur feel.
+    const sx = this.sprite.scale.x;
+    const base = this._baseScaleY || sx;
+    this.sprite.scale.set(sx, base * (1 + (BLUR_SCALE_Y - 1) * a));
+  }
+
+  clearBlur() {
+    const sx = this.sprite.scale.x;
+    const base = this._baseScaleY || sx;
+    this.sprite.scale.set(sx, base);
+  }
+
   release() {
+    this.clearBlur();
     this.container.visible = false;
     this.symbolId = null;
   }
 }
 
-/**
- * Simple object pool for SymbolView instances.
- * Acquire / release only — never construct inside the ticker.
- */
+/** Pre-warmed pool of SymbolView instances. */
 class SymbolPool {
   /**
    * @param {typeof PIXI} PIXI
    * @param {number} [prewarm]
    */
-  constructor(PIXI, prewarm = REEL_COUNT * (ROW_COUNT + SPIN_BUFFER + 2)) {
+  constructor(PIXI, prewarm = REEL_COUNT * (ROW_COUNT + SPIN_BUFFER + STRIP_EXTRA + 2)) {
     this._PIXI = PIXI;
     /** @type {SymbolView[]} */
     this._free = [];
@@ -128,6 +129,15 @@ class SymbolPool {
 }
 
 /**
+ * Ease-out cubic. `t` in 0..1.
+ * @param {number} t
+ */
+function easeOutCubic(t) {
+  const u = 1 - t;
+  return 1 - u * u * u;
+}
+
+/**
  * Single vertical reel strip.
  */
 class Reel {
@@ -136,176 +146,262 @@ class Reel {
    * @param {typeof PIXI} opts.PIXI
    * @param {number} opts.index
    * @param {SymbolPool} opts.pool
-   * @param {import('./math.js').SymbolId[]} opts.initialSymbols  length === ROW_COUNT
+   * @param {string[]} opts.initialSymbols
    */
   constructor({ PIXI, index, pool, initialSymbols }) {
     this.index = index;
     this.pool = pool;
     this.container = new PIXI.Container();
     this.container.eventMode = 'none';
+    this.container.label = `Reel${index}`;
 
-    /** @type {SymbolView[]} visible + buffer strip (top → bottom) */
+    /** @type {SymbolView[]} */
     this.symbols = [];
 
-    /** Scroll offset in px within one symbol step (0 … step). */
+    this.step = SYMBOL_H + ROW_GAP;
     this.offsetY = 0;
     this.speed = 0;
     this.targetSpeed = 0;
-    this.spinning = false;
-    this.stopping = false;
-    /** @type {import('./math.js').SymbolId[]|null} */
-    this.stopSymbols = null;
-    this._stopTimer = 0;
 
-    this.step = SYMBOL_H + ROW_GAP;
-    this.stripLen = ROW_COUNT + SPIN_BUFFER;
+    this.phase = PHASE_IDLE;
+    this._startWait = 0;
+    this._stopWait = 0;
+    /** @type {string[]|null} */
+    this._stopSymbols = null;
+    this._landElapsed = 0;
+    this._landFrom = 0;
+    this._blur = 0;
+    this._stopArmed = false;
+    this._pendingStopAfterStart = false;
 
     this._buildStrip(initialSymbols);
     this._layout();
   }
 
+  /** @returns {boolean} */
+  get isBusy() {
+    return this.phase !== PHASE_IDLE;
+  }
+
   /**
-   * @param {import('./math.js').SymbolId[]} visible
+   * @param {string[]} visible  length === ROW_COUNT
    */
   _buildStrip(visible) {
-    // Release any existing pooled views
-    for (const s of this.symbols) {
-      this.container.removeChild(s.container);
-      this.pool.release(s);
+    for (let i = 0; i < this.symbols.length; i++) {
+      this.container.removeChild(this.symbols[i].container);
+      this.pool.release(this.symbols[i]);
     }
     this.symbols.length = 0;
 
-    // One buffer symbol above the window, then the 3 visible rows
-    const ids = [
-      SYMBOL_IDS[(Math.random() * SYMBOL_IDS.length) | 0],
-      ...visible,
-    ];
-
-    for (let i = 0; i < ids.length; i++) {
+    const stripCount = ROW_COUNT + SPIN_BUFFER + STRIP_EXTRA;
+    for (let i = 0; i < stripCount; i++) {
       const view = this.pool.acquire();
-      view.configure(/** @type {import('./math.js').SymbolId} */ (ids[i]));
+      let id;
+      if (i === 0) {
+        id = assets.randomId(); // buffer above
+      } else if (i <= ROW_COUNT) {
+        id = visible[i - 1];
+      } else {
+        id = assets.randomId(); // below pad
+      }
+      view.setSymbol(id);
       this.container.addChild(view.container);
       this.symbols.push(view);
     }
   }
 
   _layout() {
-    // Index 0 sits just above the visible top (row 0).
     for (let i = 0; i < this.symbols.length; i++) {
       const y = (i - SPIN_BUFFER) * this.step + this.offsetY + SYMBOL_H * 0.5;
       this.symbols[i].container.position.set(SYMBOL_W * 0.5, y);
     }
   }
 
-  /**
-   * Begin spinning this reel.
-   * @param {number} speedPxPerSec
-   */
-  startSpin(speedPxPerSec = 2200) {
-    this.spinning = true;
-    this.stopping = false;
-    this.stopSymbols = null;
-    this._stopTimer = 0;
-    this.targetSpeed = speedPxPerSec;
+  _applyBlurToStrip() {
+    for (let i = 0; i < this.symbols.length; i++) {
+      this.symbols[i].setBlur(this._blur);
+    }
+  }
+
+  _clearBlurOnStrip() {
+    this._blur = 0;
+    for (let i = 0; i < this.symbols.length; i++) {
+      this.symbols[i].clearBlur();
+    }
   }
 
   /**
-   * Request stop on a specific 3-symbol result (after optional delay).
-   * @param {import('./math.js').SymbolId[]} result  length === ROW_COUNT
+   * Begin spinning after an optional stagger delay.
+   * @param {number} [delayMs]
+   * @param {number} [speedPxPerSec]
+   */
+  spin(delayMs = 0, speedPxPerSec = SPIN_SPEED) {
+    this._stopSymbols = null;
+    this._stopArmed = false;
+    this._stopWait = 0;
+    this._landElapsed = 0;
+    this.targetSpeed = speedPxPerSec;
+    this._startWait = delayMs;
+    this.phase = delayMs > 0 ? PHASE_START_WAIT : PHASE_SPIN;
+    if (this.phase === PHASE_SPIN) {
+      // Kick a little so blur appears immediately
+      this.speed = speedPxPerSec * 0.35;
+    }
+  }
+
+  /**
+   * Request a clean stop onto `result` (3 visible rows) after delay.
+   * @param {string[]} result
    * @param {number} [delayMs]
    */
-  requestStop(result, delayMs = 0) {
-    this.stopping = true;
-    this.stopSymbols = result;
-    this._stopTimer = delayMs;
+  stop(result, delayMs = 0) {
+    this._stopSymbols = result;
+    this._stopWait = delayMs;
+    this._stopArmed = true;
+
+    if (this.phase === PHASE_IDLE) {
+      // stop() without prior spin — snap symbols immediately
+      this.setVisibleSymbols(result);
+      return;
+    }
+
+    if (this.phase === PHASE_START_WAIT) {
+      // Still staggered-in: begin stop countdown once motion starts
+      this._pendingStopAfterStart = true;
+      return;
+    }
+
+    // Already spinning (or already stop-waiting) — count down to land
+    this.phase = PHASE_STOP_WAIT;
   }
 
   /**
-   * Advance reel by delta time (ms). Called from the shared ticker.
    * @param {number} deltaMS
    */
   update(deltaMS) {
-    if (!this.spinning) return;
+    if (this.phase === PHASE_IDLE) return;
 
-    // Ease toward target speed (no allocations)
-    const accel = 8;
-    this.speed += (this.targetSpeed - this.speed) * Math.min(1, (accel * deltaMS) / 1000);
-
-    // Move strip downward
-    this.offsetY += (this.speed * deltaMS) / 1000;
-
-    // Recycle symbols that scroll past the bottom back to the top
-    while (this.offsetY >= this.step) {
-      this.offsetY -= this.step;
-      this._recycleTop();
+    if (this.phase === PHASE_START_WAIT) {
+      this._startWait -= deltaMS;
+      if (this._startWait <= 0) {
+        this.phase = this._pendingStopAfterStart || this._stopArmed ? PHASE_STOP_WAIT : PHASE_SPIN;
+        this._pendingStopAfterStart = false;
+        this.speed = this.targetSpeed * 0.35;
+      }
+      return;
     }
 
-    if (this.stopping) {
-      this._stopTimer -= deltaMS;
-      if (this._stopTimer <= 0) {
-        this._finishStop();
+    if (this.phase === PHASE_SPIN || this.phase === PHASE_STOP_WAIT) {
+      // Ease speed toward target (accel / hold)
+      const lerp = Math.min(1, (10 * deltaMS) / 1000);
+      this.speed += (this.targetSpeed - this.speed) * lerp;
+
+      this.offsetY += (this.speed * deltaMS) / 1000;
+
+      while (this.offsetY >= this.step) {
+        this.offsetY -= this.step;
+        this._recycleTop();
+      }
+
+      // Blur amount from normalised speed
+      this._blur = Math.min(1, this.speed / SPIN_SPEED);
+      this._applyBlurToStrip();
+
+      if (this.phase === PHASE_STOP_WAIT) {
+        this._stopWait -= deltaMS;
+        if (this._stopWait <= 0) {
+          this._beginLand();
+        }
+      }
+      this._layout();
+      return;
+    }
+
+    if (this.phase === PHASE_LAND) {
+      this._landElapsed += deltaMS;
+      const t = Math.min(1, this._landElapsed / LAND_MS);
+      const settle = easeOutCubic(t);
+      // Soft bounce that decays as we settle on the target row
+      const bounce = BOUNCE_PX * Math.sin(settle * Math.PI) * (1 - settle);
+      this.offsetY = this._landFrom * (1 - settle) + bounce;
+
+      // Fade blur out during land
+      this._blur = Math.max(0, 1 - t);
+      this._applyBlurToStrip();
+      this._layout();
+
+      if (t >= 1) {
+        this.offsetY = 0;
+        this.speed = 0;
+        this.targetSpeed = 0;
+        this._clearBlurOnStrip();
+        this.phase = PHASE_IDLE;
+        this._stopArmed = false;
+        this._stopSymbols = null;
+        this._layout();
+      }
+    }
+  }
+
+  /** Inject stop symbols into the strip and enter landing phase. */
+  _beginLand() {
+    const targets = this._stopSymbols;
+    if (targets && targets.length >= ROW_COUNT) {
+      // symbols[0] = buffer above, [1..3] = visible rows
+      this.symbols[0].setSymbol(assets.randomId());
+      for (let row = 0; row < ROW_COUNT; row++) {
+        this.symbols[row + SPIN_BUFFER].setSymbol(targets[row]);
+      }
+      for (let i = ROW_COUNT + SPIN_BUFFER; i < this.symbols.length; i++) {
+        this.symbols[i].setSymbol(assets.randomId());
       }
     }
 
-    this._layout();
+    // Start land from a partial step so ease-out travels a short distance
+    this._landFrom = this.offsetY > 0 ? this.offsetY : this.step * 0.85;
+    this.offsetY = this._landFrom;
+    this._landElapsed = 0;
+    this.speed = 0;
+    this.targetSpeed = 0;
+    this.phase = PHASE_LAND;
   }
 
-  /** Move the bottom-most symbol to the top with a fresh random id (spin blur). */
+  /** Recycle bottom symbol to top with a fresh random texture (pooled). */
   _recycleTop() {
     const bottom = this.symbols.pop();
     if (!bottom) return;
-
-    const nextId = /** @type {import('./math.js').SymbolId} */ (
-      SYMBOL_IDS[(Math.random() * SYMBOL_IDS.length) | 0]
-    );
-    bottom.configure(nextId);
+    bottom.setSymbol(assets.randomId());
     this.symbols.unshift(bottom);
-    // Re-parent order not required for Graphics batching, but keep array order correct.
   }
 
-  /** Snap to stopSymbols and halt. */
-  _finishStop() {
-    if (this.stopSymbols) {
-      // Rebuild visible rows from result; keep one buffer above
-      const bufferId = /** @type {import('./math.js').SymbolId} */ (
-        SYMBOL_IDS[(Math.random() * SYMBOL_IDS.length) | 0]
-      );
-      const ids = [bufferId, ...this.stopSymbols];
-      for (let i = 0; i < this.symbols.length; i++) {
-        this.symbols[i].configure(ids[i]);
-      }
-    }
-
-    this.offsetY = 0;
-    this.speed = 0;
-    this.targetSpeed = 0;
-    this.spinning = false;
-    this.stopping = false;
-    this.stopSymbols = null;
-    this._layout();
-  }
-
-  /** Force-set visible symbols without animation. */
+  /** @param {string[]} ids */
   setVisibleSymbols(ids) {
     this._buildStrip(ids);
     this.offsetY = 0;
-    this.spinning = false;
+    this.speed = 0;
+    this.targetSpeed = 0;
+    this.phase = PHASE_IDLE;
+    this._clearBlurOnStrip();
     this._layout();
   }
 }
 
 /**
- * ReelGridController — owns the 5×3 board, mask, and spin orchestration.
+ * ReelGridController — 5×3 board with spin / stop orchestration.
  */
 export class ReelGridController {
   /**
    * @param {object} opts
    * @param {typeof PIXI} opts.PIXI
    * @param {PIXI.Container} opts.parent
-   * @param {import('./math.js').SymbolId[][]} [opts.initialGrid]  column-major 5×3
+   * @param {string[][]} [opts.initialGrid]  column-major 5×3
+   * @param {number} [opts.spinStaggerMs]  delay between reel starts
+   * @param {number} [opts.stopStaggerMs]  delay between reel stops
    */
-  constructor({ PIXI, parent, initialGrid }) {
+  constructor({ PIXI, parent, initialGrid, spinStaggerMs = 100, stopStaggerMs = 140 }) {
     this.PIXI = PIXI;
+    this.spinStaggerMs = spinStaggerMs;
+    this.stopStaggerMs = stopStaggerMs;
     this.pool = new SymbolPool(PIXI);
 
     this.root = new PIXI.Container();
@@ -314,12 +410,11 @@ export class ReelGridController {
 
     this.board = new PIXI.Container();
     this.board.eventMode = 'none';
+    this.board.label = 'Board';
 
-    /** Frame / background behind symbols (single Graphics = 1 draw-friendly shape). */
     this.frame = new PIXI.Graphics();
     this._drawFrame();
 
-    /** Clip to the 3-row visible window */
     this.maskGfx = new PIXI.Graphics();
     this._drawMask();
     this.board.mask = this.maskGfx;
@@ -330,10 +425,11 @@ export class ReelGridController {
     const grid =
       initialGrid ??
       Array.from({ length: REEL_COUNT }, () =>
-        Array.from(
-          { length: ROW_COUNT },
-          () => SYMBOL_IDS[(Math.random() * (SYMBOL_IDS.length - 2)) | 0],
-        ),
+        Array.from({ length: ROW_COUNT }, () => {
+          // Prefer lows for the idle board
+          const lows = /** @type {const} */ (['L1', 'L2', 'L3', 'L4', 'H1', 'H2']);
+          return lows[(Math.random() * lows.length) | 0];
+        }),
       );
 
     /** @type {Reel[]} */
@@ -354,13 +450,14 @@ export class ReelGridController {
     this.height = ROW_COUNT * SYMBOL_H + (ROW_COUNT - 1) * ROW_GAP;
 
     /** @type {null | (() => void)} */
-    this._onSpinComplete = null;
+    this._onComplete = null;
+    this._awaitingComplete = false;
   }
 
   _drawFrame() {
     const pad = 12;
-    const w = REEL_COUNT * SYMBOL_W + (REEL_COUNT - 1) * REEL_GAP;
-    const h = ROW_COUNT * SYMBOL_H + (ROW_COUNT - 1) * ROW_GAP;
+    const w = this._boardW();
+    const h = this._boardH();
     const g = this.frame;
     g.clear();
     g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 16);
@@ -369,16 +466,21 @@ export class ReelGridController {
   }
 
   _drawMask() {
-    const w = REEL_COUNT * SYMBOL_W + (REEL_COUNT - 1) * REEL_GAP;
-    const h = ROW_COUNT * SYMBOL_H + (ROW_COUNT - 1) * ROW_GAP;
     const g = this.maskGfx;
     g.clear();
-    g.rect(0, 0, w, h);
+    g.rect(0, 0, this._boardW(), this._boardH());
     g.fill({ color: 0xffffff });
   }
 
+  _boardW() {
+    return REEL_COUNT * SYMBOL_W + (REEL_COUNT - 1) * REEL_GAP;
+  }
+
+  _boardH() {
+    return ROW_COUNT * SYMBOL_H + (ROW_COUNT - 1) * ROW_GAP;
+  }
+
   /**
-   * Center the grid inside a design-space stage of given size.
    * @param {number} stageW
    * @param {number} stageH
    */
@@ -389,33 +491,74 @@ export class ReelGridController {
     );
   }
 
-  /**
-   * Spin all reels, then stop staggered onto `grid`.
-   * @param {import('./math.js').SymbolId[][]} grid  column-major 5×3
-   * @param {{ reelDelayMs?: number, baseSpinMs?: number, onComplete?: () => void }} [opts]
-   */
-  spinTo(grid, opts = {}) {
-    const reelDelayMs = opts.reelDelayMs ?? 120;
-    const baseSpinMs = opts.baseSpinMs ?? 600;
-    this._onSpinComplete = opts.onComplete ?? null;
-
-    for (let i = 0; i < this.reels.length; i++) {
-      const reel = this.reels[i];
-      reel.startSpin(2000 + i * 80);
-      reel.requestStop(grid[i], baseSpinMs + i * reelDelayMs);
-    }
-  }
-
   /** @returns {boolean} */
   get isSpinning() {
     for (let i = 0; i < this.reels.length; i++) {
-      if (this.reels[i].spinning) return true;
+      if (this.reels[i].isBusy) return true;
     }
     return false;
   }
 
   /**
-   * Ticker hook — deltaMS keeps motion frame-rate independent.
+   * Start spinning all reels with stagger (reel 1 → 5).
+   * @param {{ staggerMs?: number, speed?: number, onComplete?: () => void }} [opts]
+   */
+  spin(opts = {}) {
+    const stagger = opts.staggerMs ?? this.spinStaggerMs;
+    if (opts.onComplete) {
+      this._onComplete = opts.onComplete;
+      this._awaitingComplete = true;
+    }
+
+    for (let i = 0; i < this.reels.length; i++) {
+      this.reels[i].spin(i * stagger, opts.speed ?? SPIN_SPEED + i * 60);
+    }
+  }
+
+  /**
+   * Stop reels onto a specific 5×3 symbol grid (column-major).
+   * Staggers stop delays so reel 1 lands first, reel 5 last.
+   * @param {string[][]} symbolGrid
+   * @param {{ staggerMs?: number, baseDelayMs?: number, onComplete?: () => void }} [opts]
+   */
+  stop(symbolGrid, opts = {}) {
+    const stagger = opts.staggerMs ?? this.stopStaggerMs;
+    const baseDelay = opts.baseDelayMs ?? 450;
+
+    if (opts.onComplete) {
+      this._onComplete = opts.onComplete;
+      this._awaitingComplete = true;
+    } else if (!this._awaitingComplete) {
+      this._awaitingComplete = true;
+    }
+
+    for (let i = 0; i < this.reels.length; i++) {
+      const col = symbolGrid[i];
+      if (!col || col.length < ROW_COUNT) {
+        console.warn('[reels] stop: invalid column', i, col);
+        continue;
+      }
+      this.reels[i].stop(col, baseDelay + i * stagger);
+    }
+  }
+
+  /**
+   * Convenience: spin then stop on `grid` in one call.
+   * @param {string[][]} grid
+   * @param {{ onComplete?: () => void, spinStaggerMs?: number, stopStaggerMs?: number, baseDelayMs?: number }} [opts]
+   */
+  spinTo(grid, opts = {}) {
+    this.spin({
+      staggerMs: opts.spinStaggerMs ?? this.spinStaggerMs,
+      onComplete: opts.onComplete,
+    });
+    this.stop(grid, {
+      staggerMs: opts.stopStaggerMs ?? this.stopStaggerMs,
+      baseDelayMs: opts.baseDelayMs ?? 500,
+    });
+  }
+
+  /**
    * @param {number} deltaMS
    */
   update(deltaMS) {
@@ -423,17 +566,16 @@ export class ReelGridController {
       this.reels[i].update(deltaMS);
     }
 
-    // Fire once when the last reel settles — no allocations in the hot path.
-    if (this._onSpinComplete && !this.isSpinning) {
-      const cb = this._onSpinComplete;
-      this._onSpinComplete = null;
+    if (this._awaitingComplete && this._onComplete && !this.isSpinning) {
+      const cb = this._onComplete;
+      this._onComplete = null;
+      this._awaitingComplete = false;
       cb();
     }
   }
 
   /**
-   * Replace the board instantly (e.g. after a restored session).
-   * @param {import('./math.js').SymbolId[][]} grid
+   * @param {string[][]} grid
    */
   setGrid(grid) {
     for (let i = 0; i < this.reels.length; i++) {

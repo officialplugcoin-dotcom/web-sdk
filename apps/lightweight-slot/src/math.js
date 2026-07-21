@@ -5,22 +5,21 @@
  * Keep this layer pure (no Pixi / DOM) so it can run in tests or on the
  * server-side RGS without pulling in renderer code.
  *
- * Performance notes:
- *  - Avoid allocating per spin where possible (reuse result buffers).
- *  - Prefer typed arrays / flat arrays over nested objects for hot paths.
+ * Symbol ids align with assets.js robotic catalogue:
+ *   H1 Robot Head · H2 Plasma Core · H3 Cyber Heart · H4 Battery
+ *   L1–L4 Energy Chips · WILD · SCATTER
  */
 
-/** @typedef {'H1'|'H2'|'H3'|'L1'|'L2'|'L3'|'L4'|'WILD'|'SCATTER'} SymbolId */
+/** @typedef {'H1'|'H2'|'H3'|'H4'|'L1'|'L2'|'L3'|'L4'|'WILD'|'SCATTER'} SymbolId */
 
-/** Visible reel grid: 5 reels × 3 rows (column-major: reel → row). */
 export const REEL_COUNT = 5;
 export const ROW_COUNT = 3;
 
-/** Symbol catalogue used by the placeholder RNG / paytable. */
 export const SYMBOL_IDS = Object.freeze([
   'H1',
   'H2',
   'H3',
+  'H4',
   'L1',
   'L2',
   'L3',
@@ -30,13 +29,14 @@ export const SYMBOL_IDS = Object.freeze([
 ]);
 
 /**
- * Minimal paytable: [symbolId] → payout multipliers for [3-of-kind, 4, 5].
- * Values are illustrative only — replace with certified game math.
+ * Paytable: multipliers for [3-of-kind, 4, 5].
+ * Illustrative only — replace with certified game math.
  */
 export const PAYTABLE = Object.freeze({
-  H1: Object.freeze([10, 50, 200]),
-  H2: Object.freeze([8, 30, 100]),
-  H3: Object.freeze([6, 20, 80]),
+  H1: Object.freeze([12, 60, 250]),
+  H2: Object.freeze([10, 45, 180]),
+  H3: Object.freeze([8, 35, 140]),
+  H4: Object.freeze([6, 25, 100]),
   L1: Object.freeze([4, 12, 40]),
   L2: Object.freeze([3, 10, 30]),
   L3: Object.freeze([2, 8, 20]),
@@ -45,19 +45,14 @@ export const PAYTABLE = Object.freeze({
   SCATTER: Object.freeze([0, 0, 0]),
 });
 
-/** Line definitions for a classic 5×3 — left-to-right, index = row on each reel. */
 export const PAYLINES = Object.freeze([
-  Object.freeze([1, 1, 1, 1, 1]), // middle
-  Object.freeze([0, 0, 0, 0, 0]), // top
-  Object.freeze([2, 2, 2, 2, 2]), // bottom
-  Object.freeze([0, 1, 2, 1, 0]), // V
-  Object.freeze([2, 1, 0, 1, 2]), // ^
+  Object.freeze([1, 1, 1, 1, 1]),
+  Object.freeze([0, 0, 0, 0, 0]),
+  Object.freeze([2, 2, 2, 2, 2]),
+  Object.freeze([0, 1, 2, 1, 0]),
+  Object.freeze([2, 1, 0, 1, 2]),
 ]);
 
-/**
- * Reusable spin-result buffer to avoid GC pressure during rapid spins.
- * Callers should treat returned objects as read-only until the next spin.
- */
 const _resultScratch = {
   /** @type {SymbolId[][]} */
   grid: [],
@@ -67,7 +62,6 @@ const _resultScratch = {
   scatterCount: 0,
 };
 
-/** Seeded PRNG (mulberry32) — replace with server-authoritative outcomes in production. */
 export function createRng(seed = Date.now() >>> 0) {
   let t = seed >>> 0;
   return function next() {
@@ -80,7 +74,6 @@ export function createRng(seed = Date.now() >>> 0) {
 }
 
 /**
- * Build a flat weight table for weighted symbol picks.
  * @param {Record<string, number>} weights
  */
 export function buildWeightTable(weights) {
@@ -96,7 +89,8 @@ export function buildWeightTable(weights) {
 const DEFAULT_WEIGHTS = Object.freeze({
   H1: 2,
   H2: 3,
-  H3: 4,
+  H3: 3,
+  H4: 4,
   L1: 8,
   L2: 8,
   L3: 10,
@@ -108,8 +102,7 @@ const DEFAULT_WEIGHTS = Object.freeze({
 const WEIGHT_TABLE = buildWeightTable(DEFAULT_WEIGHTS);
 
 /**
- * Generate a 5×3 symbol grid (column-major).
- * @param {() => number} rng  returns [0, 1)
+ * @param {() => number} rng
  * @param {SymbolId[]} [weightTable]
  * @returns {SymbolId[][]}
  */
@@ -128,10 +121,9 @@ export function generateGrid(rng, weightTable = WEIGHT_TABLE) {
 }
 
 /**
- * Evaluate left-to-right line wins. Wild substitutes for all except scatter.
  * @param {SymbolId[][]} grid
  * @param {number} bet
- * @param {typeof _resultScratch} [out]  optional reuse buffer
+ * @param {typeof _resultScratch} [out]
  */
 export function evaluateWins(grid, bet, out = _resultScratch) {
   out.lineWins.length = 0;
@@ -139,7 +131,6 @@ export function evaluateWins(grid, bet, out = _resultScratch) {
   out.scatterCount = 0;
   out.grid = grid;
 
-  // Scatter count (any position)
   for (let r = 0; r < REEL_COUNT; r++) {
     for (let row = 0; row < ROW_COUNT; row++) {
       if (grid[r][row] === 'SCATTER') out.scatterCount++;
@@ -157,7 +148,6 @@ export function evaluateWins(grid, bet, out = _resultScratch) {
 
       if (first === null) {
         if (sym === 'WILD') {
-          // Leading wilds count; wait for a paying symbol to lock the line type.
           count++;
           continue;
         }
@@ -173,7 +163,6 @@ export function evaluateWins(grid, bet, out = _resultScratch) {
       }
     }
 
-    // If the line was all wilds, treat as WILD (no line pay in this placeholder).
     const paySym = first ?? 'WILD';
     const pays = PAYTABLE[paySym];
     if (count >= 3 && pays) {
@@ -190,7 +179,6 @@ export function evaluateWins(grid, bet, out = _resultScratch) {
 }
 
 /**
- * Full spin cycle: generate grid + evaluate.
  * @param {{ bet?: number, rng?: () => number }} [opts]
  */
 export function spin(opts = {}) {
@@ -201,8 +189,6 @@ export function spin(opts = {}) {
 }
 
 /**
- * Placeholder RTP helper — theoretical long-run estimate for tooling / QA.
- * Replace with certified simulation output before launch.
  * @param {number} spins
  * @param {number} [bet]
  * @param {number} [seed]
