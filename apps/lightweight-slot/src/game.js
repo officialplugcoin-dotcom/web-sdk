@@ -1,7 +1,8 @@
 /**
  * game.js — Main application bootstrap
  *
- * Wires AssetManager → ReelGridController → MathEngine with a SPIN button.
+ * Wires AssetManager → MathEngine.evaluateSpin → ReelGridController
+ * with a bottom-center SPIN button and on-screen win display.
  */
 
 import { assets } from './assets.js';
@@ -76,10 +77,15 @@ function resizeToView(app) {
 }
 
 /**
- * Bottom-center SPIN button + bet/win readout.
+ * Bottom-center SPIN button + bet / win / free-spin readout.
  * @param {typeof PIXI} PIXI
  * @param {PIXI.Container} parent
- * @param {{ onSpin: () => void, getBet: () => number, getLastWin: () => number }} api
+ * @param {{
+ *   onSpin: () => void,
+ *   getBet: () => number,
+ *   getLastWin: () => number,
+ *   getFreeSpins: () => number,
+ * }} api
  */
 function createSpinButton(PIXI, parent, api) {
   const hud = new PIXI.Container();
@@ -97,6 +103,20 @@ function createSpinButton(PIXI, parent, api) {
   });
   info.anchor.set(0.5, 0);
   info.eventMode = 'none';
+
+  const winBanner = new PIXI.Text({
+    text: '',
+    style: {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: 36,
+      fontWeight: '800',
+      fill: 0xffe566,
+      align: 'center',
+    },
+  });
+  winBanner.anchor.set(0.5, 0);
+  winBanner.eventMode = 'none';
+  winBanner.visible = false;
 
   const btn = new PIXI.Container();
   btn.eventMode = 'static';
@@ -143,7 +163,7 @@ function createSpinButton(PIXI, parent, api) {
     api.onSpin();
   });
 
-  hud.addChild(info, btn);
+  hud.addChild(info, winBanner, btn);
   parent.addChild(hud);
 
   return {
@@ -152,14 +172,50 @@ function createSpinButton(PIXI, parent, api) {
      * @param {number} stageH
      */
     layout(stageW, stageH) {
+      winBanner.position.set(stageW * 0.5, stageH - 360);
       info.position.set(stageW * 0.5, stageH - 290);
       btn.position.set(stageW * 0.5, stageH - 160);
     },
     refresh() {
-      info.text = `Bet ${api.getBet().toFixed(2)}   ·   Win ${api.getLastWin().toFixed(2)}`;
+      const fs = api.getFreeSpins();
+      const fsPart = fs > 0 ? `   ·   FS ${fs}` : '';
+      info.text = `Bet ${api.getBet().toFixed(2)}   ·   Win ${api.getLastWin().toFixed(2)}${fsPart}`;
+    },
+    /**
+     * @param {number} amount
+     * @param {{ freeSpins?: boolean, capped?: boolean }} [opts]
+     */
+    showWin(amount, opts = {}) {
+      if (amount > 0) {
+        let msg = `WIN ${amount.toFixed(2)}`;
+        if (opts.capped) msg += ' (CAP)';
+        if (opts.freeSpins) msg += '  ·  FREE SPINS!';
+        winBanner.text = msg;
+        winBanner.visible = true;
+      } else if (opts.freeSpins) {
+        winBanner.text = 'FREE SPINS TRIGGERED!';
+        winBanner.visible = true;
+      } else {
+        winBanner.visible = false;
+      }
+    },
+    hideWin() {
+      winBanner.visible = false;
     },
     setBusy: setVisualBusy,
+    /** @param {string} label */
+    setButtonLabel(label) {
+      btnLabel.text = label;
+    },
   };
+}
+
+/**
+ * Advance a mutable seed for the next paid spin (deterministic stream).
+ * @param {number} seed
+ */
+function nextSeed(seed) {
+  return (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) + 0x7f4a7c15) >>> 0;
 }
 
 async function main() {
@@ -184,7 +240,6 @@ async function main() {
 
   mount.appendChild(app.canvas);
 
-  // --- Assets (images or coloured fallbacks) ---------------------------------
   await assets.load(PIXI, {
     onProgress: (ratio, label) => setBootProgress(0.1 + ratio * 0.75, label),
   });
@@ -221,7 +276,7 @@ async function main() {
   stageRoot.addChild(title);
 
   const subtitle = new PIXI.Text({
-    text: assets.usingFallbacksOnly ? 'placeholder art · ready for textures' : 'assets loaded',
+    text: `20 lines · RTP ~${Math.round(MathEngine.TARGET_RTP * 100)}% · max ${MathEngine.MAX_WIN_MULT}x`,
     style: {
       fontFamily: 'system-ui, sans-serif',
       fontSize: 18,
@@ -236,44 +291,107 @@ async function main() {
   const reels = new ReelGridController({ PIXI, parent: stageRoot });
   reels.centerIn(DESIGN_WIDTH, DESIGN_HEIGHT - 80);
 
+  // --- Session state ----------------------------------------------------------
   let bet = 1;
   let lastWin = 0;
-  const rng = MathEngine.createRng((Date.now() ^ 0x9e3779b9) >>> 0);
+  let freeSpinsRemaining = 0;
+  let freeSpinParentSeed = 0;
+  let freeSpinIndex = 0;
+  let spinSeed = (Date.now() ^ 0x9e3779b9) >>> 0;
 
-  const hud = createSpinButton(PIXI, stageRoot, {
+  /** @type {ReturnType<typeof createSpinButton>} */
+  let hud;
+
+  /**
+   * Run one resolved spin through the reel engine.
+   * @param {ReturnType<typeof MathEngine.evaluateSpin>} result
+   * @param {boolean} isFree
+   */
+  function playResolvedSpin(result, isFree) {
+    lastWin = 0;
+    hud.hideWin();
+    reels.clearHighlights();
+    hud.refresh();
+    hud.setBusy(true);
+    hud.setButtonLabel(isFree ? 'FREE' : 'SPIN');
+
+    reels.spin({
+      staggerMs: 100,
+      onComplete: () => {
+        lastWin = result.totalWin;
+        hud.refresh();
+        hud.showWin(result.totalWin, {
+          freeSpins: result.isFreeSpinTriggered,
+          capped: result.winCapped,
+        });
+        reels.highlightWins(result.winningLines);
+        hud.setBusy(false);
+        hud.setButtonLabel(freeSpinsRemaining > 0 ? 'FREE' : 'SPIN');
+
+        if (result.winningLines.length > 0) {
+          console.info(
+            '[math] win',
+            result.totalWin,
+            result.winningLines
+              .filter((w) => w.lineIndex >= 0)
+              .map((w) => `L${w.lineIndex}:${w.symbol}x${w.count}`)
+              .join(', '),
+            result.isFreeSpinTriggered ? `+${result.freeSpinsAwarded} FS` : '',
+          );
+        }
+
+        // Auto-continue free spins after a short beat
+        if (freeSpinsRemaining > 0) {
+          window.setTimeout(() => {
+            if (!reels.isSpinning) triggerSpin();
+          }, 650);
+        }
+      },
+    });
+
+    reels.stop(result.grid, {
+      baseDelayMs: 550,
+      staggerMs: 140,
+    });
+  }
+
+  function triggerSpin() {
+    if (reels.isSpinning) return;
+
+    const inFreeSpin = freeSpinsRemaining > 0;
+    let result;
+
+    if (inFreeSpin) {
+      freeSpinsRemaining -= 1;
+      const seed = MathEngine.freeSpinSeed(freeSpinParentSeed, freeSpinIndex++);
+      // Free spins use the same bet for paytable scaling (no extra wager)
+      result = MathEngine.evaluateSpin(bet, seed);
+    } else {
+      spinSeed = nextSeed(spinSeed);
+      result = MathEngine.evaluateSpin(bet, spinSeed);
+    }
+
+    if (result.isFreeSpinTriggered) {
+      if (!inFreeSpin) {
+        freeSpinParentSeed = result.seed;
+        freeSpinIndex = 0;
+      }
+      freeSpinsRemaining += result.freeSpinsAwarded;
+    }
+
+    hud.refresh();
+    playResolvedSpin(result, inFreeSpin);
+  }
+
+  hud = createSpinButton(PIXI, stageRoot, {
     getBet: () => bet,
     getLastWin: () => lastWin,
+    getFreeSpins: () => freeSpinsRemaining,
     onSpin: () => {
-      if (reels.isSpinning) return;
-
-      // 1) Resolve outcome from math engine (replace with RGS in production)
-      const result = MathEngine.spin({ bet, rng });
-      lastWin = 0;
-      hud.refresh();
-      hud.setBusy(true);
-
-      // 2) Start staggered spin (reels 1→5), then stop on the target grid
-      reels.spin({
-        staggerMs: 100,
-        onComplete: () => {
-          lastWin = result.totalWin;
-          hud.refresh();
-          hud.setBusy(false);
-          if (result.totalWin > 0) {
-            console.info(
-              '[math] win',
-              result.totalWin,
-              result.lineWins.map((w) => `L${w.lineIndex}:${w.symbol}x${w.count}`).join(', '),
-            );
-          }
-        },
-      });
-
-      // 3) Arm staggered stop onto the resolved symbol grid
-      reels.stop(result.grid, {
-        baseDelayMs: 550,
-        staggerMs: 140,
-      });
+      // During free spins the auto-loop drives play; manual press is ignored while busy
+      if (freeSpinsRemaining > 0 && reels.isSpinning) return;
+      if (freeSpinsRemaining > 0) return; // wait for auto-continue
+      triggerSpin();
     },
   });
   hud.layout(DESIGN_WIDTH, DESIGN_HEIGHT);
@@ -294,13 +412,20 @@ async function main() {
   hideBoot();
 
   /** @type {any} */
-  globalThis.__SLOT__ = { app, reels, math: MathEngine, assets };
+  globalThis.__SLOT__ = {
+    app,
+    reels,
+    math: MathEngine,
+    assets,
+    evaluateSpin: MathEngine.evaluateSpin,
+    getDesignParams: MathEngine.getDesignParams,
+  };
 
   console.info(
-    '[game] ready — %dx%d grid, fallbacks=%s',
-    MathEngine.REEL_COUNT,
-    MathEngine.ROW_COUNT,
-    assets.usingFallbacksOnly,
+    '[game] ready — %d lines, max %dx, target RTP %s%%',
+    MathEngine.LINE_COUNT,
+    MathEngine.MAX_WIN_MULT,
+    Math.round(MathEngine.TARGET_RTP * 100),
   );
 }
 

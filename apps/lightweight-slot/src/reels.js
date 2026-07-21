@@ -73,6 +73,27 @@ class SymbolView {
     this.sprite.height = h;
     this._baseScaleY = this.sprite.scale.y;
     this.container.visible = true;
+    this.setHighlight(false);
+  }
+
+  /**
+   * Dim / brighten for win presentation (tint only — no extra draw calls).
+   * @param {boolean} on
+   * @param {boolean} [winner]
+   */
+  setHighlight(on, winner = false) {
+    if (!on) {
+      this.sprite.tint = 0xffffff;
+      this.sprite.alpha = 1;
+      return;
+    }
+    if (winner) {
+      this.sprite.tint = 0xffffff;
+      this.sprite.alpha = 1;
+    } else {
+      this.sprite.tint = 0x667788;
+      this.sprite.alpha = 0.45;
+    }
   }
 
   /**
@@ -384,6 +405,16 @@ class Reel {
     this._clearBlurOnStrip();
     this._layout();
   }
+
+  /**
+   * Access the visible SymbolView at board row (0..ROW_COUNT-1).
+   * @param {number} row
+   * @returns {SymbolView|null}
+   */
+  getVisibleSymbol(row) {
+    const idx = row + SPIN_BUFFER;
+    return this.symbols[idx] ?? null;
+  }
 }
 
 /**
@@ -580,6 +611,55 @@ export class ReelGridController {
   setGrid(grid) {
     for (let i = 0; i < this.reels.length; i++) {
       this.reels[i].setVisibleSymbols(grid[i]);
+    }
+  }
+
+  /** Clear all win dimming / highlights. */
+  clearHighlights() {
+    for (let r = 0; r < this.reels.length; r++) {
+      for (let row = 0; row < ROW_COUNT; row++) {
+        const view = this.reels[r].getVisibleSymbol(row);
+        if (view) view.setHighlight(false);
+      }
+    }
+  }
+
+  /**
+   * Highlight winning cells from math `winningLines` positions.
+   * Non-winning symbols are dimmed for contrast.
+   * @param {Array<{ positions: Array<{ reel: number, row: number }> }>} winningLines
+   */
+  highlightWins(winningLines) {
+    /** @type {boolean[][]} */
+    const marked = Array.from({ length: REEL_COUNT }, () =>
+      Array.from({ length: ROW_COUNT }, () => false),
+    );
+
+    let any = false;
+    if (winningLines) {
+      for (let i = 0; i < winningLines.length; i++) {
+        const positions = winningLines[i].positions;
+        if (!positions) continue;
+        for (let p = 0; p < positions.length; p++) {
+          const { reel, row } = positions[p];
+          if (reel >= 0 && reel < REEL_COUNT && row >= 0 && row < ROW_COUNT) {
+            marked[reel][row] = true;
+            any = true;
+          }
+        }
+      }
+    }
+
+    for (let r = 0; r < this.reels.length; r++) {
+      for (let row = 0; row < ROW_COUNT; row++) {
+        const view = this.reels[r].getVisibleSymbol(row);
+        if (!view) continue;
+        if (!any) {
+          view.setHighlight(false);
+        } else {
+          view.setHighlight(true, marked[r][row]);
+        }
+      }
     }
   }
 }

@@ -2,6 +2,7 @@
   "name": "lightweight-slot",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "description": "Lightweight modular Pixi.js slot architecture (CDN, mobile-first)",
   "scripts": {
     "serve": "python3 -m http.server 5179 --bind 127.0.0.1"
