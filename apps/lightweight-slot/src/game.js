@@ -418,7 +418,7 @@ async function main() {
     math: MathEngine,
     assets,
     evaluateSpin: MathEngine.evaluateSpin,
-    estimateRtp: MathEngine.estimateRtp,
+    getDesignParams: MathEngine.getDesignParams,
   };
 
   console.info(
