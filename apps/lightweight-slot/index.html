@@ -28,11 +28,12 @@
       }
 
       :root {
-        --bg: #050b14;
+        --bg: #050810;
         --cyan: #00d4ff;
-        --magenta: #ff3cc8;
-        --text: #e8fbff;
-        --muted: #7ee8ff;
+        --magenta: #b44cff;
+        --gold: #d4af37;
+        --text: #f3e9ff;
+        --muted: #d2b4ff;
       }
 
       html,
@@ -54,13 +55,13 @@
         align-items: center;
         justify-content: center;
         background:
-          radial-gradient(ellipse 70% 55% at 50% 30%, #0c1e32 0%, #050b14 68%),
+          radial-gradient(ellipse 70% 55% at 50% 30%, #1a0a2e 0%, #050810 68%),
           repeating-linear-gradient(
             0deg,
             transparent,
             transparent 3px,
-            rgba(0, 212, 255, 0.028) 3px,
-            rgba(0, 212, 255, 0.028) 4px
+            rgba(180, 76, 255, 0.03) 3px,
+            rgba(180, 76, 255, 0.03) 4px
           );
       }
 
@@ -80,12 +81,12 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 18px;
+        gap: 14px;
         background:
-          radial-gradient(circle at 50% 40%, #0a2034 0%, #050b14 70%);
+          radial-gradient(circle at 50% 36%, #2a1050 0%, #0a0614 62%, #050810 100%);
         color: var(--muted);
         pointer-events: none;
-        transition: opacity 0.4s ease, visibility 0.4s ease;
+        transition: opacity 0.45s ease, visibility 0.45s ease;
       }
 
       #splash.is-hidden {
@@ -94,33 +95,31 @@
       }
 
       #splash .mark {
-        width: min(280px, 70vw);
+        width: min(340px, 78vw);
         height: auto;
-        filter: drop-shadow(0 0 18px rgba(0, 212, 255, 0.35));
-        animation: pulseGlow 2.2s ease-in-out infinite;
+        filter: drop-shadow(0 0 28px rgba(180, 76, 255, 0.55));
+        animation: pulseGlow 2.4s ease-in-out infinite;
       }
 
       #splash .studio {
-        font-size: 12px;
-        letter-spacing: 0.42em;
-        text-transform: uppercase;
-        color: var(--cyan);
+        display: none; /* brand mark already includes wordmark */
       }
 
       #splash .game-title {
-        font-size: clamp(28px, 7vw, 44px);
+        margin-top: 8px;
+        font-size: clamp(28px, 7vw, 46px);
         font-weight: 800;
         letter-spacing: 0.22em;
         color: var(--text);
         text-shadow:
-          0 0 22px rgba(0, 212, 255, 0.45),
-          0 0 40px rgba(255, 60, 200, 0.2);
+          0 0 22px rgba(180, 76, 255, 0.55),
+          0 0 40px rgba(212, 175, 55, 0.25);
       }
 
       #splash .meta {
         font-size: 11px;
         letter-spacing: 0.16em;
-        color: #5aa8c0;
+        color: #c9a227;
         text-transform: uppercase;
       }
 
@@ -132,19 +131,19 @@
       }
 
       #splash .bar {
-        width: min(240px, 64vw);
+        width: min(260px, 68vw);
         height: 4px;
-        background: rgba(126, 232, 255, 0.12);
+        background: rgba(180, 76, 255, 0.15);
         overflow: hidden;
         border-radius: 2px;
-        box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+        box-shadow: 0 0 14px rgba(180, 76, 255, 0.2);
       }
 
       #splash .bar > span {
         display: block;
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, var(--cyan), #7ee8ff, var(--magenta));
+        background: linear-gradient(90deg, #7b2cff, #b44cff, var(--gold));
         background-size: 200% 100%;
         animation: barShine 1.4s linear infinite;
         transition: width 0.15s linear;
@@ -153,12 +152,12 @@
       @keyframes pulseGlow {
         0%,
         100% {
-          filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
+          filter: drop-shadow(0 0 16px rgba(180, 76, 255, 0.4));
           transform: scale(1);
         }
         50% {
-          filter: drop-shadow(0 0 24px rgba(255, 60, 200, 0.35));
-          transform: scale(1.02);
+          filter: drop-shadow(0 0 32px rgba(212, 175, 55, 0.45));
+          transform: scale(1.03);
         }
       }
 
@@ -177,8 +176,8 @@
       <img
         class="mark"
         src="./assets/brand/limitless-studio.png"
-        width="280"
-        height="84"
+        width="340"
+        height="191"
         alt="Limitless Studio"
       />
       <div class="studio">Limitless Studio</div>

@@ -82,9 +82,9 @@ function createHUD(PIXI, parent, api) {
 
   // --- Header plate ---------------------------------------------------------
   const headerBg = new PIXI.Graphics();
-  headerBg.roundRect(24, 28, DESIGN_WIDTH - 48, 148, 14);
-  headerBg.fill({ color: 0x071018, alpha: 0.92 });
-  headerBg.stroke({ width: 2, color: 0x00d4ff, alpha: 0.55 });
+  headerBg.roundRect(24, 28, DESIGN_WIDTH - 48, 156, 14);
+  headerBg.fill({ color: 0x0a0614, alpha: 0.94 });
+  headerBg.stroke({ width: 2, color: 0xb44cff, alpha: 0.65 });
   headerBg.eventMode = 'none';
   root.addChild(headerBg);
 
@@ -93,15 +93,18 @@ function createHUD(PIXI, parent, api) {
   if (assets.brandLogo) {
     logoSprite = new PIXI.Sprite(assets.brandLogo);
     logoSprite.anchor.set(0, 0.5);
-    logoSprite.position.set(44, 78);
-    logoSprite.width = 200;
-    logoSprite.height = 60;
+    logoSprite.position.set(40, 90);
+    // Preserve aspect — mark is ~640×360
+    const logoH = 118;
+    const aspect = assets.brandLogo.width / Math.max(1, assets.brandLogo.height);
+    logoSprite.height = logoH;
+    logoSprite.width = Math.round(logoH * aspect);
     logoSprite.eventMode = 'none';
     root.addChild(logoSprite);
   } else {
     const studio = new PIXI.Text({
       text: 'LIMITLESS STUDIO',
-      style: { fontFamily: FONT, fontSize: 16, fill: 0x7ee8ff, letterSpacing: 2 },
+      style: { fontFamily: FONT, fontSize: 16, fill: 0xd2b4ff, letterSpacing: 2 },
     });
     studio.position.set(48, 48);
     studio.eventMode = 'none';
@@ -112,23 +115,23 @@ function createHUD(PIXI, parent, api) {
     text: 'ROBO 5000',
     style: {
       fontFamily: FONT,
-      fontSize: 42,
+      fontSize: 40,
       fontWeight: '800',
-      fill: 0xe8fbff,
+      fill: 0xf3e9ff,
       letterSpacing: 4,
     },
   });
   title.anchor.set(1, 0);
-  title.position.set(DESIGN_WIDTH - 48, 44);
+  title.position.set(DESIGN_WIDTH - 48, 48);
   title.eventMode = 'none';
   root.addChild(title);
 
   const meta = new PIXI.Text({
     text: `RTP ${Math.round(MathEngine.TARGET_RTP * 100)}%  ·  MAX WIN ${MathEngine.MAX_WIN_MULT}×  ·  HIGH VOL`,
-    style: { fontFamily: FONT, fontSize: 13, fill: 0x5aa8c0, letterSpacing: 1 },
+    style: { fontFamily: FONT, fontSize: 13, fill: 0xd4af37, letterSpacing: 1 },
   });
   meta.anchor.set(1, 0);
-  meta.position.set(DESIGN_WIDTH - 48, 96);
+  meta.position.set(DESIGN_WIDTH - 48, 100);
   meta.eventMode = 'none';
   root.addChild(meta);
 
@@ -136,7 +139,8 @@ function createHUD(PIXI, parent, api) {
     text: '',
     style: { fontFamily: FONT, fontSize: 18, fill: 0xffe566, letterSpacing: 1 },
   });
-  balanceText.position.set(48, 128);
+  balanceText.anchor.set(1, 0);
+  balanceText.position.set(DESIGN_WIDTH - 48, 132);
   balanceText.eventMode = 'none';
   root.addChild(balanceText);
 
@@ -354,12 +358,11 @@ async function main() {
 
   const atmosphere = new PIXI.Graphics();
   atmosphere.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
-  atmosphere.fill({ color: 0x081420 });
-  // subtle neon rails
-  atmosphere.rect(0, 190, DESIGN_WIDTH, 2);
-  atmosphere.fill({ color: 0x00d4ff, alpha: 0.25 });
+  atmosphere.fill({ color: 0x0a0614 });
+  atmosphere.rect(0, 198, DESIGN_WIDTH, 2);
+  atmosphere.fill({ color: 0xb44cff, alpha: 0.28 });
   atmosphere.rect(0, 1168, DESIGN_WIDTH, 2);
-  atmosphere.fill({ color: 0xff3cc8, alpha: 0.2 });
+  atmosphere.fill({ color: 0xd4af37, alpha: 0.22 });
   stageRoot.addChild(atmosphere);
 
   // --- Session state --------------------------------------------------------

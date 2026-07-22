@@ -455,12 +455,12 @@ export class ReelGridController {
     const g = this.frame;
     g.clear();
     g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 12);
-    g.fill({ color: 0x071018 });
+    g.fill({ color: 0x0a0614 });
     g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 12);
-    g.stroke({ width: 3, color: 0x00d4ff, alpha: 0.75 });
+    g.stroke({ width: 3, color: 0xb44cff, alpha: 0.75 });
     g.roundRect(-pad + 5, -pad + 5, w + pad * 2 - 10, h + pad * 2 - 10, 8);
-    g.stroke({ width: 1, color: 0xff3cc8, alpha: 0.35 });
-    const bolt = 0x3a5a70;
+    g.stroke({ width: 1, color: 0xd4af37, alpha: 0.45 });
+    const bolt = 0x6a4a20;
     for (const [x, y] of [
       [-pad + 11, -pad + 11],
       [w + pad - 11, -pad + 11],
