@@ -3,8 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Lightweight modular Pixi.js slot architecture (CDN, mobile-first)",
+  "description": "Lightweight 5×3 robotic/cyberpunk Pixi.js slot (CDN, mobile-first, 96% RTP)",
   "scripts": {
-    "serve": "python3 -m http.server 5179 --bind 127.0.0.1"
+    "start": "npx --yes serve . -l 5179",
+    "serve": "npx --yes serve . -l 5179",
+    "serve:python": "python3 -m http.server 5179 --bind 127.0.0.1"
   }
 }

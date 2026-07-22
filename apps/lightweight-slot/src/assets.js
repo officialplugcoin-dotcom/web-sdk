@@ -9,13 +9,14 @@
  *  - All placeholders are baked once into Texture objects (GPU upload once).
  *  - Runtime only swaps `sprite.texture` — no per-frame Graphics redraw.
  *  - Shared textures across pooled sprites → texture batching friendly.
+ *  - Symbol PNGs are ~96×96 and under 1 KB each for mobile bandwidth.
  */
 
 /** @typedef {'H1'|'H2'|'H3'|'H4'|'L1'|'L2'|'L3'|'L4'|'WILD'|'SCATTER'} SymbolId */
 
 /**
- * Canonical symbol catalogue.
- * `src` paths are placeholders — drop real art under `assets/symbols/` later.
+ * Canonical symbol catalogue — robotic / cyberpunk 2D set.
+ * Art lives under `assets/symbols/` (lightweight procedural PNGs).
  */
 export const SYMBOL_DEFS = Object.freeze({
   // High symbols
@@ -24,8 +25,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'high',
     name: 'Robot Head',
     label: 'HEAD',
-    color: 0x5dade2,
-    accent: 0x1a5276,
+    color: 0x2e86ab,
+    accent: 0x00d4ff,
     src: './assets/symbols/robot-head.png',
   }),
   H2: Object.freeze({
@@ -33,8 +34,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'high',
     name: 'Plasma Core',
     label: 'CORE',
-    color: 0xaf7ac5,
-    accent: 0x6c3483,
+    color: 0x6c3483,
+    accent: 0xdc82ff,
     src: './assets/symbols/plasma-core.png',
   }),
   H3: Object.freeze({
@@ -42,8 +43,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'high',
     name: 'Cyber Heart',
     label: 'HEART',
-    color: 0xec7063,
-    accent: 0x922b21,
+    color: 0xa93226,
+    accent: 0xff5078,
     src: './assets/symbols/cyber-heart.png',
   }),
   H4: Object.freeze({
@@ -51,8 +52,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'high',
     name: 'Battery',
     label: 'BATT',
-    color: 0x58d68d,
-    accent: 0x1e8449,
+    color: 0x1e8449,
+    accent: 0x50ff9a,
     src: './assets/symbols/battery.png',
   }),
   // Low symbols — Energy Chips
@@ -61,8 +62,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'low',
     name: 'Energy Chip Red',
     label: 'CHIP',
-    color: 0xe74c3c,
-    accent: 0x7b241c,
+    color: 0xc0392b,
+    accent: 0xff5050,
     src: './assets/symbols/chip-red.png',
   }),
   L2: Object.freeze({
@@ -70,8 +71,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'low',
     name: 'Energy Chip Blue',
     label: 'CHIP',
-    color: 0x3498db,
-    accent: 0x1a5276,
+    color: 0x1a5276,
+    accent: 0x50b4ff,
     src: './assets/symbols/chip-blue.png',
   }),
   L3: Object.freeze({
@@ -79,8 +80,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'low',
     name: 'Energy Chip Green',
     label: 'CHIP',
-    color: 0x2ecc71,
-    accent: 0x196f3d,
+    color: 0x196f3d,
+    accent: 0x50ff8c,
     src: './assets/symbols/chip-green.png',
   }),
   L4: Object.freeze({
@@ -88,8 +89,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'low',
     name: 'Energy Chip Yellow',
     label: 'CHIP',
-    color: 0xf4d03f,
-    accent: 0x9a7d0a,
+    color: 0x9a7d0a,
+    accent: 0xffdc3c,
     src: './assets/symbols/chip-yellow.png',
   }),
   // Specials
@@ -98,8 +99,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'special',
     name: 'Wild',
     label: 'WILD',
-    color: 0xf5f5f5,
-    accent: 0x566573,
+    color: 0x566573,
+    accent: 0xe8f0ff,
     src: './assets/symbols/wild.png',
   }),
   SCATTER: Object.freeze({
@@ -107,8 +108,8 @@ export const SYMBOL_DEFS = Object.freeze({
     tier: 'special',
     name: 'Scatter',
     label: 'SCAT',
-    color: 0xff6b9d,
-    accent: 0x7d2948,
+    color: 0x7d2948,
+    accent: 0xff64b4,
     src: './assets/symbols/scatter.png',
   }),
 });
@@ -116,8 +117,8 @@ export const SYMBOL_DEFS = Object.freeze({
 /** Ordered id list — keep in sync with math engine. */
 export const SYMBOL_IDS = Object.freeze(/** @type {SymbolId[]} */ (Object.keys(SYMBOL_DEFS)));
 
-/** Default cell size used when baking placeholder textures. */
-export const ASSET_SYMBOL_SIZE = 140;
+/** Default cell size used when baking placeholder textures (matches PNG assets). */
+export const ASSET_SYMBOL_SIZE = 96;
 
 /**
  * @param {number} color  0xRRGGBB
@@ -145,36 +146,45 @@ function createFallbackTexture(PIXI, def, size = ASSET_SYMBOL_SIZE) {
     return PIXI.Texture.WHITE;
   }
 
-  const pad = 6;
-  const radius = 14;
+  const pad = 4;
+  const radius = 10;
 
-  // Plate
+  // Transparent plate + neon body
+  ctx.clearRect(0, 0, size, size);
   ctx.fillStyle = toCssHex(def.color);
   roundRectPath(ctx, pad, pad, size - pad * 2, size - pad * 2, radius);
   ctx.fill();
 
-  // Inner bevel
+  // Inner bevel (cyber panel)
   ctx.strokeStyle = toCssHex(def.accent);
-  ctx.lineWidth = 3;
-  roundRectPath(ctx, pad + 4, pad + 4, size - (pad + 4) * 2, size - (pad + 4) * 2, radius - 4);
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, pad + 4, pad + 4, size - (pad + 4) * 2, size - (pad + 4) * 2, radius - 3);
   ctx.stroke();
 
-  // Tier stripe
-  ctx.fillStyle = toCssHex(def.accent);
-  ctx.globalAlpha = 0.35;
-  ctx.fillRect(pad + 10, pad + 10, size - (pad + 10) * 2, 18);
-  ctx.globalAlpha = 1;
+  // Corner tech ticks
+  ctx.strokeStyle = toCssHex(def.accent);
+  ctx.lineWidth = 1.5;
+  const t = pad + 8;
+  ctx.beginPath();
+  ctx.moveTo(t, t + 8);
+  ctx.lineTo(t, t);
+  ctx.lineTo(t + 8, t);
+  ctx.moveTo(size - t, t + 8);
+  ctx.lineTo(size - t, t);
+  ctx.lineTo(size - t - 8, t);
+  ctx.stroke();
 
   // Labels
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = def.tier === 'special' ? '#0b1220' : '#0b1220';
-  ctx.font = '700 22px system-ui, sans-serif';
-  ctx.fillText(def.label, size * 0.5, size * 0.48);
+  ctx.fillStyle = '#e8fbff';
+  ctx.font = '700 16px Orbitron, system-ui, sans-serif';
+  ctx.fillText(def.label, size * 0.5, size * 0.46);
 
-  ctx.font = '600 11px system-ui, sans-serif';
-  ctx.globalAlpha = 0.75;
-  ctx.fillText(def.id, size * 0.5, size * 0.68);
+  ctx.font = '600 9px Orbitron, system-ui, sans-serif';
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = toCssHex(def.accent);
+  ctx.fillText(def.id, size * 0.5, size * 0.66);
   ctx.globalAlpha = 1;
 
   const texture = PIXI.Texture.from(canvas);

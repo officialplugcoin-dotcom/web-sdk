@@ -11,6 +11,7 @@
 import { assets } from './assets.js';
 import { REEL_COUNT, ROW_COUNT } from './math.js';
 
+/** Display cell size — source PNGs are 96×96, scaled once at setSymbol. */
 export const SYMBOL_W = 140;
 export const SYMBOL_H = 140;
 export const REEL_GAP = 8;
@@ -491,9 +492,26 @@ export class ReelGridController {
     const h = this._boardH();
     const g = this.frame;
     g.clear();
-    g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 16);
-    g.fill({ color: 0x152033, alpha: 1 });
-    g.stroke({ width: 3, color: 0x5b9dff, alpha: 0.55 });
+    // Dark chassis plate
+    g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 10);
+    g.fill({ color: 0x0c1826, alpha: 1 });
+    // Neon cyan outer rail
+    g.roundRect(-pad, -pad, w + pad * 2, h + pad * 2, 10);
+    g.stroke({ width: 3, color: 0x00d4ff, alpha: 0.7 });
+    // Inner accent rail
+    g.roundRect(-pad + 5, -pad + 5, w + pad * 2 - 10, h + pad * 2 - 10, 7);
+    g.stroke({ width: 1, color: 0x7ee8ff, alpha: 0.35 });
+    // Corner bolts (cheap robotic detail, no extra sprites)
+    const bolt = 0x3a5a70;
+    const r = 3;
+    g.circle(-pad + 10, -pad + 10, r);
+    g.fill({ color: bolt });
+    g.circle(w + pad - 10, -pad + 10, r);
+    g.fill({ color: bolt });
+    g.circle(-pad + 10, h + pad - 10, r);
+    g.fill({ color: bolt });
+    g.circle(w + pad - 10, h + pad - 10, r);
+    g.fill({ color: bolt });
   }
 
   _drawMask() {
