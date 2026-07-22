@@ -1,62 +1,52 @@
 /**
- * game.js — Main application bootstrap
+ * game.js — Robo 5000 by Limitless Studio
  *
- * Wires AssetManager → MathEngine.evaluateSpin → ReelGridController
- * with a bottom-center SPIN button and on-screen win display.
+ * Splash → Asset load → 5×5 high-vol slot with Stake-style controls:
+ * bet ±, ante (3×), buy bonus (100×), super buy (300×), demo balance.
  */
 
 import { assets } from './assets.js';
 import { MathEngine } from './math.js';
 import { ReelGridController } from './reels.js';
+import { sfx } from './audio.js';
 
 const DESIGN_WIDTH = 900;
 const DESIGN_HEIGHT = 1600;
-const MAX_DPR = 2;
+const MAX_DPR = 1.5;
+const FONT = 'Orbitron, system-ui, sans-serif';
+const START_BALANCE = 1000;
 
-/**
- * @returns {typeof PIXI}
- */
 function getPIXI() {
   const P = /** @type {typeof PIXI | undefined} */ (globalThis.PIXI);
-  if (!P) {
-    throw new Error('PIXI global missing — check the CDN script tag in index.html');
-  }
+  if (!P) throw new Error('PIXI global missing — check CDN script in index.html');
   return P;
 }
 
-/**
- * @param {number} ratio
- * @param {string} [label]
- */
-function setBootProgress(ratio, label) {
-  const bar = document.getElementById('boot-progress');
-  const boot = document.getElementById('boot');
+function setSplashProgress(ratio, label) {
+  const bar = document.getElementById('splash-progress');
+  const status = document.getElementById('splash-status');
   if (bar) bar.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
-  if (boot && label) {
-    const text = boot.querySelector('span');
-    if (text) text.textContent = label;
-  }
+  if (status && label) status.textContent = label;
 }
 
-function hideBoot() {
-  const boot = document.getElementById('boot');
-  if (!boot) return;
-  boot.classList.add('is-hidden');
-  window.setTimeout(() => boot.remove(), 300);
+function hideSplash() {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  splash.classList.add('is-hidden');
+  window.setTimeout(() => splash.remove(), 450);
 }
 
-/**
- * @param {PIXI.Application} app
- */
+function money(n) {
+  return `$${Number(n).toFixed(2)}`;
+}
+
 function resizeToView(app) {
   const root = document.getElementById('game-root');
   if (!root) return;
-
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const designRatio = DESIGN_WIDTH / DESIGN_HEIGHT;
   const viewRatio = vw / vh;
-
   let cssW;
   let cssH;
   if (viewRatio > designRatio) {
@@ -66,129 +56,246 @@ function resizeToView(app) {
     cssW = vw;
     cssH = vw / designRatio;
   }
-
   const canvas = app.canvas;
   canvas.style.width = `${Math.floor(cssW)}px`;
   canvas.style.height = `${Math.floor(cssH)}px`;
-
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
   app.renderer.resolution = dpr;
   app.renderer.resize(DESIGN_WIDTH, DESIGN_HEIGHT);
 }
 
+function nextSeed(seed) {
+  return (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) + 0x7f4a7c15) >>> 0;
+}
+
 /**
- * Bottom-center SPIN button + bet / win / free-spin readout.
+ * Build interactive HUD (header + controls).
  * @param {typeof PIXI} PIXI
  * @param {PIXI.Container} parent
- * @param {{
- *   onSpin: () => void,
- *   getBet: () => number,
- *   getLastWin: () => number,
- *   getFreeSpins: () => number,
- * }} api
+ * @param {object} api
  */
-function createSpinButton(PIXI, parent, api) {
-  const hud = new PIXI.Container();
-  hud.eventMode = 'static';
-  hud.label = 'HUD';
+function createHUD(PIXI, parent, api) {
+  const root = new PIXI.Container();
+  root.eventMode = 'static';
+  root.label = 'HUD';
+  parent.addChild(root);
 
-  const info = new PIXI.Text({
-    text: '',
+  // --- Header plate ---------------------------------------------------------
+  const headerBg = new PIXI.Graphics();
+  headerBg.roundRect(24, 28, DESIGN_WIDTH - 48, 156, 14);
+  headerBg.fill({ color: 0x0a0614, alpha: 0.94 });
+  headerBg.stroke({ width: 2, color: 0xb44cff, alpha: 0.65 });
+  headerBg.eventMode = 'none';
+  root.addChild(headerBg);
+
+  /** @type {PIXI.Sprite|null} */
+  let logoSprite = null;
+  if (assets.brandLogo) {
+    logoSprite = new PIXI.Sprite(assets.brandLogo);
+    logoSprite.anchor.set(0, 0.5);
+    logoSprite.position.set(40, 90);
+    // Preserve aspect — mark is ~640×360
+    const logoH = 118;
+    const aspect = assets.brandLogo.width / Math.max(1, assets.brandLogo.height);
+    logoSprite.height = logoH;
+    logoSprite.width = Math.round(logoH * aspect);
+    logoSprite.eventMode = 'none';
+    root.addChild(logoSprite);
+  } else {
+    const studio = new PIXI.Text({
+      text: 'LIMITLESS STUDIO',
+      style: { fontFamily: FONT, fontSize: 16, fill: 0xd2b4ff, letterSpacing: 2 },
+    });
+    studio.position.set(48, 48);
+    studio.eventMode = 'none';
+    root.addChild(studio);
+  }
+
+  const title = new PIXI.Text({
+    text: 'ROBO 5000',
     style: {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: 26,
-      fill: 0xc8d4e8,
-      align: 'center',
+      fontFamily: FONT,
+      fontSize: 40,
+      fontWeight: '800',
+      fill: 0xf3e9ff,
+      letterSpacing: 4,
     },
   });
-  info.anchor.set(0.5, 0);
-  info.eventMode = 'none';
+  title.anchor.set(1, 0);
+  title.position.set(DESIGN_WIDTH - 48, 48);
+  title.eventMode = 'none';
+  root.addChild(title);
 
+  const meta = new PIXI.Text({
+    text: `RTP ${Math.round(MathEngine.TARGET_RTP * 100)}%  ·  MAX WIN ${MathEngine.MAX_WIN_MULT}×  ·  HIGH VOL`,
+    style: { fontFamily: FONT, fontSize: 13, fill: 0xd4af37, letterSpacing: 1 },
+  });
+  meta.anchor.set(1, 0);
+  meta.position.set(DESIGN_WIDTH - 48, 100);
+  meta.eventMode = 'none';
+  root.addChild(meta);
+
+  const balanceText = new PIXI.Text({
+    text: '',
+    style: { fontFamily: FONT, fontSize: 18, fill: 0xffe566, letterSpacing: 1 },
+  });
+  balanceText.anchor.set(1, 0);
+  balanceText.position.set(DESIGN_WIDTH - 48, 132);
+  balanceText.eventMode = 'none';
+  root.addChild(balanceText);
+
+  // --- Win banner -----------------------------------------------------------
   const winBanner = new PIXI.Text({
     text: '',
     style: {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: 36,
+      fontFamily: FONT,
+      fontSize: 32,
       fontWeight: '800',
       fill: 0xffe566,
       align: 'center',
+      letterSpacing: 2,
     },
   });
   winBanner.anchor.set(0.5, 0);
+  winBanner.position.set(DESIGN_WIDTH * 0.5, 1180);
   winBanner.eventMode = 'none';
   winBanner.visible = false;
+  root.addChild(winBanner);
 
-  const btn = new PIXI.Container();
-  btn.eventMode = 'static';
-  btn.cursor = 'pointer';
-  btn.label = 'SpinButton';
+  // --- Control dock ---------------------------------------------------------
+  const dockY = 1260;
+  const dock = new PIXI.Graphics();
+  dock.roundRect(24, dockY, DESIGN_WIDTH - 48, 300, 16);
+  dock.fill({ color: 0x0a0614, alpha: 0.94 });
+  dock.stroke({ width: 2, color: 0xb44cff, alpha: 0.45 });
+  dock.eventMode = 'none';
+  root.addChild(dock);
 
-  const btnBg = new PIXI.Graphics();
-  btnBg.roundRect(-130, -44, 260, 88, 16);
-  btnBg.fill({ color: 0x3d8bfd });
-  btnBg.stroke({ width: 3, color: 0xa8d0ff, alpha: 0.7 });
-  btnBg.eventMode = 'none';
-
-  const btnLabel = new PIXI.Text({
-    text: 'SPIN',
-    style: {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: 40,
-      fontWeight: '800',
-      fill: 0xffffff,
-      letterSpacing: 6,
-    },
+  const infoLine = new PIXI.Text({
+    text: '',
+    style: { fontFamily: FONT, fontSize: 16, fill: 0xd2b4ff, align: 'center' },
   });
-  btnLabel.anchor.set(0.5);
-  btnLabel.eventMode = 'none';
+  infoLine.anchor.set(0.5, 0);
+  infoLine.position.set(DESIGN_WIDTH * 0.5, dockY + 18);
+  infoLine.eventMode = 'none';
+  root.addChild(infoLine);
 
-  btn.addChild(btnBg, btnLabel);
+  /**
+   * @param {string} label
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @param {number} fill
+   * @param {number} stroke
+   * @param {() => void} onTap
+   */
+  function makeButton(label, x, y, w, h, fill, stroke, onTap) {
+    const btn = new PIXI.Container();
+    btn.eventMode = 'static';
+    btn.cursor = 'pointer';
+    btn.position.set(x, y);
+
+    const bg = new PIXI.Graphics();
+    bg.roundRect(-w / 2, -h / 2, w, h, 10);
+    bg.fill({ color: fill });
+    bg.stroke({ width: 2, color: stroke, alpha: 0.85 });
+    bg.eventMode = 'none';
+
+    const text = new PIXI.Text({
+      text: label,
+      style: {
+        fontFamily: FONT,
+        fontSize: label.includes('\n') ? 14 : Math.min(26, Math.floor(w / Math.max(label.length, 1) * 1.1)),
+        fontWeight: '800',
+        fill: 0xe8fbff,
+        align: 'center',
+        lineHeight: 18,
+      },
+    });
+    text.anchor.set(0.5);
+    text.eventMode = 'none';
+
+    btn.addChild(bg, text);
+    let disabled = false;
+
+    btn.on('pointerdown', () => {
+      if (!disabled) btn.scale.set(0.96);
+    });
+    btn.on('pointerup', () => btn.scale.set(1));
+    btn.on('pointerupoutside', () => btn.scale.set(1));
+    btn.on('pointertap', () => {
+      btn.scale.set(1);
+      if (disabled) return;
+      sfx.click();
+      onTap();
+    });
+
+    root.addChild(btn);
+    return {
+      setLabel(v) {
+        text.text = v;
+      },
+      setDisabled(v) {
+        disabled = v;
+        bg.tint = v ? 0x667788 : 0xffffff;
+        text.alpha = v ? 0.55 : 1;
+        btn.cursor = v ? 'default' : 'pointer';
+      },
+      setActive(v) {
+        bg.tint = v ? 0xa0ffe0 : 0xffffff;
+      },
+      bg,
+      text,
+    };
+  }
+
+  const cy = dockY + 100;
+  const betMinus = makeButton('−', 90, cy, 64, 56, 0x1a0a30, 0xb44cff, () => api.adjustBet(-1));
+  const betPlus = makeButton('+', 310, cy, 64, 56, 0x1a0a30, 0xb44cff, () => api.adjustBet(1));
+
+  const betLabel = new PIXI.Text({
+    text: '',
+    style: { fontFamily: FONT, fontSize: 20, fill: 0xf3e9ff, align: 'center' },
+  });
+  betLabel.anchor.set(0.5);
+  betLabel.position.set(200, cy);
+  betLabel.eventMode = 'none';
+  root.addChild(betLabel);
+
+  const anteBtn = makeButton('ANTE\n3×', 430, cy, 100, 64, 0x2a1030, 0xb44cff, () =>
+    api.toggleAnte(),
+  );
+  const buyBtn = makeButton('BUY\n100×', 560, cy, 100, 64, 0x103020, 0x28ff78, () =>
+    api.buyBonus('free'),
+  );
+  const superBtn = makeButton('SUPER\n300×', 700, cy, 110, 64, 0x302010, 0xd4af37, () =>
+    api.buyBonus('super'),
+  );
+  const spinBtn = makeButton('SPIN', DESIGN_WIDTH * 0.5, dockY + 210, 280, 88, 0x5a1a90, 0xd4af37, () =>
+    api.onSpin(),
+  );
 
   let busy = false;
 
-  const setVisualBusy = (v) => {
-    busy = v;
-    btnBg.tint = v ? 0x7aa8d8 : 0xffffff;
-    btnLabel.alpha = v ? 0.7 : 1;
-  };
-
-  btn.on('pointerdown', () => {
-    if (!busy) btn.scale.set(0.96);
-  });
-  btn.on('pointerup', () => btn.scale.set(1));
-  btn.on('pointerupoutside', () => btn.scale.set(1));
-  btn.on('pointertap', () => {
-    btn.scale.set(1);
-    if (busy) return;
-    api.onSpin();
-  });
-
-  hud.addChild(info, winBanner, btn);
-  parent.addChild(hud);
-
   return {
-    /**
-     * @param {number} stageW
-     * @param {number} stageH
-     */
-    layout(stageW, stageH) {
-      winBanner.position.set(stageW * 0.5, stageH - 360);
-      info.position.set(stageW * 0.5, stageH - 290);
-      btn.position.set(stageW * 0.5, stageH - 160);
-    },
     refresh() {
+      balanceText.text = `DEMO  ${money(api.getBalance())}`;
+      betLabel.text = money(api.getBet());
       const fs = api.getFreeSpins();
-      const fsPart = fs > 0 ? `   ·   FS ${fs}` : '';
-      info.text = `Bet ${api.getBet().toFixed(2)}   ·   Win ${api.getLastWin().toFixed(2)}${fsPart}`;
+      const mode = api.getModeLabel();
+      const cost = api.getSpinCost();
+      infoLine.text =
+        fs > 0
+          ? `${mode}  ·  FREE SPINS ${fs}  ·  LAST WIN ${money(api.getLastWin())}`
+          : `${mode}  ·  COST ${money(cost)}  ·  WIN ${money(api.getLastWin())}`;
+      anteBtn.setActive(api.isAnte());
+      anteBtn.setLabel(api.isAnte() ? 'ANTE\nON' : 'ANTE\n3×');
     },
-    /**
-     * @param {number} amount
-     * @param {{ freeSpins?: boolean, capped?: boolean }} [opts]
-     */
     showWin(amount, opts = {}) {
       if (amount > 0) {
-        let msg = `WIN ${amount.toFixed(2)}`;
-        if (opts.capped) msg += ' (CAP)';
+        let msg = `WIN ${money(amount)}`;
+        if (opts.capped) msg += '  CAP';
         if (opts.freeSpins) msg += '  ·  FREE SPINS!';
         winBanner.text = msg;
         winBanner.visible = true;
@@ -202,20 +309,19 @@ function createSpinButton(PIXI, parent, api) {
     hideWin() {
       winBanner.visible = false;
     },
-    setBusy: setVisualBusy,
-    /** @param {string} label */
-    setButtonLabel(label) {
-      btnLabel.text = label;
+    setBusy(v) {
+      busy = v;
+      spinBtn.setDisabled(v);
+      betMinus.setDisabled(v || api.getFreeSpins() > 0);
+      betPlus.setDisabled(v || api.getFreeSpins() > 0);
+      anteBtn.setDisabled(v || api.getFreeSpins() > 0);
+      buyBtn.setDisabled(v || api.getFreeSpins() > 0);
+      superBtn.setDisabled(v || api.getFreeSpins() > 0);
+      spinBtn.setLabel(api.getFreeSpins() > 0 ? 'FREE' : 'SPIN');
+      spinBtn.bg.tint = v ? 0x7aa8d8 : 0xffffff;
     },
+    isBusy: () => busy,
   };
-}
-
-/**
- * Advance a mutable seed for the next paid spin (deterministic stream).
- * @param {number} seed
- */
-function nextSeed(seed) {
-  return (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) + 0x7f4a7c15) >>> 0;
 }
 
 async function main() {
@@ -223,28 +329,27 @@ async function main() {
   const mount = document.getElementById('game-root');
   if (!mount) throw new Error('#game-root missing');
 
-  setBootProgress(0.05, 'Starting renderer…');
+  setSplashProgress(0.06, 'Booting renderer…');
 
   const app = new PIXI.Application();
   await app.init({
     width: DESIGN_WIDTH,
     height: DESIGN_HEIGHT,
-    background: 0x0b1220,
+    background: 0x050b14,
     antialias: false,
     preference: 'webgl',
     powerPreference: 'high-performance',
     resolution: Math.min(window.devicePixelRatio || 1, MAX_DPR),
     autoDensity: true,
-    roundPixels: false,
+    roundPixels: true,
   });
-
   mount.appendChild(app.canvas);
 
   await assets.load(PIXI, {
-    onProgress: (ratio, label) => setBootProgress(0.1 + ratio * 0.75, label),
+    onProgress: (ratio, label) => setSplashProgress(0.08 + ratio * 0.82, label),
   });
 
-  setBootProgress(0.9, 'Building stage…');
+  setSplashProgress(0.94, 'Assembling Robo 5000…');
 
   const stageRoot = new PIXI.Container();
   stageRoot.eventMode = 'passive';
@@ -253,57 +358,51 @@ async function main() {
 
   const atmosphere = new PIXI.Graphics();
   atmosphere.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
-  atmosphere.fill({ color: 0x101a2e });
-  atmosphere.rect(0, 0, DESIGN_WIDTH, 180);
-  atmosphere.fill({ color: 0x0b1220, alpha: 0.55 });
-  atmosphere.rect(0, DESIGN_HEIGHT - 320, DESIGN_WIDTH, 320);
-  atmosphere.fill({ color: 0x0b1220, alpha: 0.65 });
+  atmosphere.fill({ color: 0x0a0614 });
+  atmosphere.rect(0, 198, DESIGN_WIDTH, 2);
+  atmosphere.fill({ color: 0xb44cff, alpha: 0.28 });
+  atmosphere.rect(0, 1168, DESIGN_WIDTH, 2);
+  atmosphere.fill({ color: 0xd4af37, alpha: 0.22 });
   stageRoot.addChild(atmosphere);
 
-  const title = new PIXI.Text({
-    text: 'CYBER REELS',
-    style: {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: 44,
-      fontWeight: '800',
-      fill: 0xe8eef8,
-      letterSpacing: 6,
-    },
-  });
-  title.anchor.set(0.5, 0);
-  title.position.set(DESIGN_WIDTH * 0.5, 64);
-  title.eventMode = 'none';
-  stageRoot.addChild(title);
-
-  const subtitle = new PIXI.Text({
-    text: `20 lines · RTP ~${Math.round(MathEngine.TARGET_RTP * 100)}% · max ${MathEngine.MAX_WIN_MULT}x`,
-    style: {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: 18,
-      fill: 0x7f92b0,
-    },
-  });
-  subtitle.anchor.set(0.5, 0);
-  subtitle.position.set(DESIGN_WIDTH * 0.5, 118);
-  subtitle.eventMode = 'none';
-  stageRoot.addChild(subtitle);
-
-  const reels = new ReelGridController({ PIXI, parent: stageRoot });
-  reels.centerIn(DESIGN_WIDTH, DESIGN_HEIGHT - 80);
-
-  // --- Session state ----------------------------------------------------------
+  // --- Session state --------------------------------------------------------
+  let balance = START_BALANCE;
   let bet = 1;
+  let ante = false;
   let lastWin = 0;
   let freeSpinsRemaining = 0;
+  /** @type {'free'|'super'|null} */
+  let freeMode = null;
+  /** @type {Array<{ reel: number, row: number, mult: number }>} */
+  let stickyWilds = [];
   let freeSpinParentSeed = 0;
   let freeSpinIndex = 0;
   let spinSeed = (Date.now() ^ 0x9e3779b9) >>> 0;
-
-  /** @type {ReturnType<typeof createSpinButton>} */
+  /** @type {ReturnType<typeof createHUD>} */
   let hud;
 
+  const reels = new ReelGridController({
+    PIXI,
+    parent: stageRoot,
+    onReelLand: (i) => sfx.reelStop(i),
+  });
+  reels.centerIn(DESIGN_WIDTH, DESIGN_HEIGHT);
+  // Sit the 5×5 board between header (~180) and control dock (~1260)
+  reels.root.y = Math.round(180 + (1000 - reels.height) * 0.5);
+
+  function spinCost() {
+    if (freeSpinsRemaining > 0) return 0;
+    return ante ? bet * MathEngine.ANTE_MULT : bet;
+  }
+
+  function modeLabel() {
+    if (freeSpinsRemaining > 0) {
+      return freeMode === 'super' ? 'SUPER FS' : 'FREE SPINS';
+    }
+    return ante ? 'ANTE BET' : 'BASE';
+  }
+
   /**
-   * Run one resolved spin through the reel engine.
    * @param {ReturnType<typeof MathEngine.evaluateSpin>} result
    * @param {boolean} isFree
    */
@@ -313,12 +412,18 @@ async function main() {
     reels.clearHighlights();
     hud.refresh();
     hud.setBusy(true);
-    hud.setButtonLabel(isFree ? 'FREE' : 'SPIN');
+    sfx.spinStart();
 
     reels.spin({
-      staggerMs: 100,
+      staggerMs: 90,
       onComplete: () => {
         lastWin = result.totalWin;
+        if (result.totalWin > 0) {
+          balance = Math.round((balance + result.totalWin) * 100) / 100;
+          sfx.win(result.totalWin >= bet * 20);
+        }
+        if (result.isFreeSpinTriggered) sfx.bonus();
+
         hud.refresh();
         hud.showWin(result.totalWin, {
           freeSpins: result.isFreeSpinTriggered,
@@ -326,81 +431,146 @@ async function main() {
         });
         reels.highlightWins(result.winningLines);
         hud.setBusy(false);
-        hud.setButtonLabel(freeSpinsRemaining > 0 ? 'FREE' : 'SPIN');
 
-        if (result.winningLines.length > 0) {
+        if (result.winningLines.length) {
           console.info(
-            '[math] win',
+            '[robo5000]',
+            result.mode,
+            'win',
             result.totalWin,
             result.winningLines
               .filter((w) => w.lineIndex >= 0)
-              .map((w) => `L${w.lineIndex}:${w.symbol}x${w.count}`)
+              .map((w) => `L${w.lineIndex}:${w.symbol}x${w.count}${w.multiplier > 1 ? `@${w.multiplier}` : ''}`)
               .join(', '),
-            result.isFreeSpinTriggered ? `+${result.freeSpinsAwarded} FS` : '',
           );
         }
 
-        // Auto-continue free spins after a short beat
         if (freeSpinsRemaining > 0) {
           window.setTimeout(() => {
             if (!reels.isSpinning) triggerSpin();
-          }, 650);
+          }, 700);
         }
       },
     });
 
-    reels.stop(result.grid, {
-      baseDelayMs: 550,
-      staggerMs: 140,
+    reels.stop(result.grid, result.wildMults, {
+      baseDelayMs: 520,
+      staggerMs: 130,
     });
   }
 
   function triggerSpin() {
-    if (reels.isSpinning) return;
+    if (reels.isSpinning || hud.isBusy()) return;
 
-    const inFreeSpin = freeSpinsRemaining > 0;
+    const inFree = freeSpinsRemaining > 0;
+    /** @type {ReturnType<typeof MathEngine.evaluateSpin>} */
     let result;
 
-    if (inFreeSpin) {
+    if (inFree) {
       freeSpinsRemaining -= 1;
       const seed = MathEngine.freeSpinSeed(freeSpinParentSeed, freeSpinIndex++);
-      // Free spins use the same bet for paytable scaling (no extra wager)
-      result = MathEngine.evaluateSpin(bet, seed);
+      const mode = freeMode === 'super' ? 'super' : 'free';
+      result = MathEngine.evaluateSpin(bet, seed, {
+        mode,
+        stickyWilds: mode === 'super' ? stickyWilds : [],
+        cost: 0,
+      });
+      if (mode === 'super') stickyWilds = result.stickyWilds;
     } else {
+      const cost = spinCost();
+      if (balance < cost) {
+        hud.showWin(0);
+        console.warn('[robo5000] insufficient demo balance');
+        return;
+      }
+      balance = Math.round((balance - cost) * 100) / 100;
       spinSeed = nextSeed(spinSeed);
-      result = MathEngine.evaluateSpin(bet, spinSeed);
+      result = MathEngine.evaluateSpin(bet, spinSeed, {
+        mode: ante ? 'ante' : 'base',
+        cost,
+      });
     }
 
     if (result.isFreeSpinTriggered) {
-      if (!inFreeSpin) {
+      if (!inFree) {
         freeSpinParentSeed = result.seed;
         freeSpinIndex = 0;
+        freeMode = 'free';
+        stickyWilds = [];
       }
       freeSpinsRemaining += result.freeSpinsAwarded;
     }
 
     hud.refresh();
-    playResolvedSpin(result, inFreeSpin);
+    playResolvedSpin(result, inFree);
   }
 
-  hud = createSpinButton(PIXI, stageRoot, {
+  /**
+   * @param {'free'|'super'} kind
+   */
+  function buyBonus(kind) {
+    if (reels.isSpinning || hud.isBusy() || freeSpinsRemaining > 0) return;
+    const mult = kind === 'super' ? MathEngine.SUPER_BUY_MULT : MathEngine.BUY_BONUS_MULT;
+    const cost = bet * mult;
+    if (balance < cost) {
+      console.warn('[robo5000] cannot afford bonus buy', money(cost));
+      return;
+    }
+    balance = Math.round((balance - cost) * 100) / 100;
+    spinSeed = nextSeed(spinSeed);
+    const result = MathEngine.evaluateBonusPurchase(bet, spinSeed, kind);
+    freeSpinParentSeed = result.seed;
+    freeSpinIndex = 0;
+    freeMode = kind;
+    stickyWilds = [];
+    freeSpinsRemaining += result.freeSpinsAwarded;
+    ante = false;
+    hud.refresh();
+    sfx.bonus();
+    playResolvedSpin(result, false);
+  }
+
+  hud = createHUD(PIXI, stageRoot, {
+    getBalance: () => balance,
     getBet: () => bet,
     getLastWin: () => lastWin,
     getFreeSpins: () => freeSpinsRemaining,
+    getSpinCost: () => spinCost(),
+    getModeLabel: () => modeLabel(),
+    isAnte: () => ante,
+    adjustBet: (dir) => {
+      if (hud.isBusy() || freeSpinsRemaining > 0) return;
+      bet = MathEngine.nextBet(bet, dir);
+      hud.refresh();
+    },
+    toggleAnte: () => {
+      if (hud.isBusy() || freeSpinsRemaining > 0) return;
+      ante = !ante;
+      hud.refresh();
+    },
+    buyBonus,
     onSpin: () => {
-      // During free spins the auto-loop drives play; manual press is ignored while busy
-      if (freeSpinsRemaining > 0 && reels.isSpinning) return;
-      if (freeSpinsRemaining > 0) return; // wait for auto-continue
+      sfx.unlock();
+      if (freeSpinsRemaining > 0) return;
       triggerSpin();
     },
   });
-  hud.layout(DESIGN_WIDTH, DESIGN_HEIGHT);
   hud.refresh();
+  hud.setBusy(false);
 
   const onResize = () => resizeToView(app);
   window.addEventListener('resize', onResize, { passive: true });
   window.addEventListener('orientationchange', onResize, { passive: true });
   onResize();
+
+  // Unlock audio on first pointer
+  window.addEventListener(
+    'pointerdown',
+    () => {
+      sfx.unlock();
+    },
+    { once: true },
+  );
 
   app.ticker.maxFPS = 60;
   app.ticker.minFPS = 30;
@@ -408,8 +578,8 @@ async function main() {
     reels.update(ticker.deltaMS);
   });
 
-  setBootProgress(1, 'Ready');
-  hideBoot();
+  setSplashProgress(1, 'Ready');
+  hideSplash();
 
   /** @type {any} */
   globalThis.__SLOT__ = {
@@ -419,22 +589,22 @@ async function main() {
     assets,
     evaluateSpin: MathEngine.evaluateSpin,
     getDesignParams: MathEngine.getDesignParams,
+    getBalance: () => balance,
   };
 
   console.info(
-    '[game] ready — %d lines, max %dx, target RTP %s%%',
-    MathEngine.LINE_COUNT,
-    MathEngine.MAX_WIN_MULT,
+    '[robo5000] ready — %s by %s · %dx%d · RTP %s%% · max %dx',
+    MathEngine.getDesignParams().title,
+    MathEngine.getDesignParams().studio,
+    MathEngine.REEL_COUNT,
+    MathEngine.ROW_COUNT,
     Math.round(MathEngine.TARGET_RTP * 100),
+    MathEngine.MAX_WIN_MULT,
   );
 }
 
 main().catch((err) => {
-  console.error('[game] fatal', err);
-  const boot = document.getElementById('boot');
-  if (boot) {
-    boot.classList.remove('is-hidden');
-    const text = boot.querySelector('span');
-    if (text) text.textContent = 'Failed to start — see console';
-  }
+  console.error('[robo5000] fatal', err);
+  const status = document.getElementById('splash-status');
+  if (status) status.textContent = 'Failed to start — see console';
 });
