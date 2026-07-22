@@ -166,14 +166,14 @@ function createHUD(PIXI, parent, api) {
   const dockY = 1260;
   const dock = new PIXI.Graphics();
   dock.roundRect(24, dockY, DESIGN_WIDTH - 48, 300, 16);
-  dock.fill({ color: 0x071018, alpha: 0.94 });
-  dock.stroke({ width: 2, color: 0x00d4ff, alpha: 0.4 });
+  dock.fill({ color: 0x0a0614, alpha: 0.94 });
+  dock.stroke({ width: 2, color: 0xb44cff, alpha: 0.45 });
   dock.eventMode = 'none';
   root.addChild(dock);
 
   const infoLine = new PIXI.Text({
     text: '',
-    style: { fontFamily: FONT, fontSize: 16, fill: 0x7ee8ff, align: 'center' },
+    style: { fontFamily: FONT, fontSize: 16, fill: 0xd2b4ff, align: 'center' },
   });
   infoLine.anchor.set(0.5, 0);
   infoLine.position.set(DESIGN_WIDTH * 0.5, dockY + 18);
@@ -251,28 +251,28 @@ function createHUD(PIXI, parent, api) {
   }
 
   const cy = dockY + 100;
-  const betMinus = makeButton('−', 90, cy, 64, 56, 0x0a3040, 0x00d4ff, () => api.adjustBet(-1));
-  const betPlus = makeButton('+', 310, cy, 64, 56, 0x0a3040, 0x00d4ff, () => api.adjustBet(1));
+  const betMinus = makeButton('−', 90, cy, 64, 56, 0x1a0a30, 0xb44cff, () => api.adjustBet(-1));
+  const betPlus = makeButton('+', 310, cy, 64, 56, 0x1a0a30, 0xb44cff, () => api.adjustBet(1));
 
   const betLabel = new PIXI.Text({
     text: '',
-    style: { fontFamily: FONT, fontSize: 20, fill: 0xe8fbff, align: 'center' },
+    style: { fontFamily: FONT, fontSize: 20, fill: 0xf3e9ff, align: 'center' },
   });
   betLabel.anchor.set(0.5);
   betLabel.position.set(200, cy);
   betLabel.eventMode = 'none';
   root.addChild(betLabel);
 
-  const anteBtn = makeButton('ANTE\n3×', 430, cy, 100, 64, 0x2a1030, 0xff3cc8, () =>
+  const anteBtn = makeButton('ANTE\n3×', 430, cy, 100, 64, 0x2a1030, 0xb44cff, () =>
     api.toggleAnte(),
   );
   const buyBtn = makeButton('BUY\n100×', 560, cy, 100, 64, 0x103020, 0x28ff78, () =>
     api.buyBonus('free'),
   );
-  const superBtn = makeButton('SUPER\n300×', 700, cy, 110, 64, 0x302010, 0xffd228, () =>
+  const superBtn = makeButton('SUPER\n300×', 700, cy, 110, 64, 0x302010, 0xd4af37, () =>
     api.buyBonus('super'),
   );
-  const spinBtn = makeButton('SPIN', DESIGN_WIDTH * 0.5, dockY + 210, 280, 88, 0x067a96, 0x00d4ff, () =>
+  const spinBtn = makeButton('SPIN', DESIGN_WIDTH * 0.5, dockY + 210, 280, 88, 0x5a1a90, 0xd4af37, () =>
     api.onSpin(),
   );
 
