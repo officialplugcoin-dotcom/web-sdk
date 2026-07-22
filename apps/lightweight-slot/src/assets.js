@@ -1,205 +1,104 @@
 /**
- * assets.js — Symbol asset manager (robotic 2D set)
+ * assets.js — Robo 5000 symbol + brand loader (Limitless Studio)
  *
- * Loads textures for high / low / special symbols. If an image URL is missing
- * or fails, generates a cached coloured placeholder texture (Graphics → canvas)
- * so the game runs immediately for testing without art.
- *
- * Low-end notes:
- *  - All placeholders are baked once into Texture objects (GPU upload once).
- *  - Runtime only swaps `sprite.texture` — no per-frame Graphics redraw.
- *  - Shared textures across pooled sprites → texture batching friendly.
- *  - Symbol PNGs are ~96×96 and under 1 KB each for mobile bandwidth.
+ * Loads crisp 2D cyberpunk textures. Missing files fall back to baked
+ * neon placeholders so `npx serve` always boots.
  */
 
-/** @typedef {'H1'|'H2'|'H3'|'H4'|'L1'|'L2'|'L3'|'L4'|'WILD'|'SCATTER'} SymbolId */
+/** @typedef {'L1'|'L2'|'L3'|'L4'|'H1'|'H2'|'H3'|'WILD'|'SCATTER'} SymbolId */
 
-/**
- * Canonical symbol catalogue — robotic / cyberpunk 2D set.
- * Art lives under `assets/symbols/` (lightweight procedural PNGs).
- */
 export const SYMBOL_DEFS = Object.freeze({
-  // High symbols
-  H1: Object.freeze({
-    id: 'H1',
-    tier: 'high',
-    name: 'Robot Head',
-    label: 'HEAD',
-    color: 0x2e86ab,
-    accent: 0x00d4ff,
-    src: './assets/symbols/robot-head.png',
-  }),
-  H2: Object.freeze({
-    id: 'H2',
-    tier: 'high',
-    name: 'Plasma Core',
-    label: 'CORE',
-    color: 0x6c3483,
-    accent: 0xdc82ff,
-    src: './assets/symbols/plasma-core.png',
-  }),
-  H3: Object.freeze({
-    id: 'H3',
-    tier: 'high',
-    name: 'Cyber Heart',
-    label: 'HEART',
-    color: 0xa93226,
-    accent: 0xff5078,
-    src: './assets/symbols/cyber-heart.png',
-  }),
-  H4: Object.freeze({
-    id: 'H4',
-    tier: 'high',
-    name: 'Battery',
-    label: 'BATT',
-    color: 0x1e8449,
-    accent: 0x50ff9a,
-    src: './assets/symbols/battery.png',
-  }),
-  // Low symbols — Energy Chips
   L1: Object.freeze({
     id: 'L1',
     tier: 'low',
-    name: 'Energy Chip Red',
-    label: 'CHIP',
-    color: 0xc0392b,
-    accent: 0xff5050,
-    src: './assets/symbols/chip-red.png',
+    name: 'Circuit Board',
+    label: 'CIRC',
+    color: 0x084055,
+    accent: 0x00e6ff,
+    src: './assets/symbols/circuit.png',
   }),
   L2: Object.freeze({
     id: 'L2',
     tier: 'low',
-    name: 'Energy Chip Blue',
+    name: 'Microchip',
     label: 'CHIP',
-    color: 0x1a5276,
-    accent: 0x50b4ff,
-    src: './assets/symbols/chip-blue.png',
+    color: 0x0a321c,
+    accent: 0x28ff78,
+    src: './assets/symbols/microchip.png',
   }),
   L3: Object.freeze({
     id: 'L3',
     tier: 'low',
-    name: 'Energy Chip Green',
-    label: 'CHIP',
-    color: 0x196f3d,
-    accent: 0x50ff8c,
-    src: './assets/symbols/chip-green.png',
+    name: 'Quantum Core',
+    label: 'QBIT',
+    color: 0x370c32,
+    accent: 0xff3cc8,
+    src: './assets/symbols/quantum-core.png',
   }),
   L4: Object.freeze({
     id: 'L4',
     tier: 'low',
-    name: 'Energy Chip Yellow',
-    label: 'CHIP',
-    color: 0x9a7d0a,
-    accent: 0xffdc3c,
-    src: './assets/symbols/chip-yellow.png',
+    name: 'Plasma Cell',
+    label: 'CELL',
+    color: 0x372a08,
+    accent: 0xffd228,
+    src: './assets/symbols/plasma-cell.png',
   }),
-  // Specials
+  H1: Object.freeze({
+    id: 'H1',
+    tier: 'high',
+    name: 'Mecha Sentinel',
+    label: 'MECH',
+    color: 0x1c2230,
+    accent: 0x00dcff,
+    src: './assets/symbols/mecha-sentinel.png',
+  }),
+  H2: Object.freeze({
+    id: 'H2',
+    tier: 'high',
+    name: 'Android Visor',
+    label: 'VISR',
+    color: 0x1a2820,
+    accent: 0x50ff8c,
+    src: './assets/symbols/android-visor.png',
+  }),
+  H3: Object.freeze({
+    id: 'H3',
+    tier: 'high',
+    name: 'Cyber Omega',
+    label: 'OMEG',
+    color: 0x2a1830,
+    accent: 0xff50c8,
+    src: './assets/symbols/cyber-omega.png',
+  }),
   WILD: Object.freeze({
     id: 'WILD',
     tier: 'special',
-    name: 'Wild',
+    name: 'Neon Wild',
     label: 'WILD',
-    color: 0x566573,
-    accent: 0xe8f0ff,
+    color: 0x283040,
+    accent: 0xe6f5ff,
     src: './assets/symbols/wild.png',
   }),
   SCATTER: Object.freeze({
     id: 'SCATTER',
     tier: 'special',
-    name: 'Scatter',
+    name: 'Energy Core',
     label: 'SCAT',
-    color: 0x7d2948,
-    accent: 0xff64b4,
+    color: 0x281237,
+    accent: 0xff78ff,
     src: './assets/symbols/scatter.png',
   }),
 });
 
-/** Ordered id list — keep in sync with math engine. */
 export const SYMBOL_IDS = Object.freeze(/** @type {SymbolId[]} */ (Object.keys(SYMBOL_DEFS)));
+export const ASSET_SYMBOL_SIZE = 128;
+export const BRAND_LOGO_SRC = './assets/brand/limitless-studio.png';
 
-/** Default cell size used when baking placeholder textures (matches PNG assets). */
-export const ASSET_SYMBOL_SIZE = 96;
-
-/**
- * @param {number} color  0xRRGGBB
- * @returns {string} css hex
- */
 function toCssHex(color) {
   return `#${(color >>> 0).toString(16).padStart(6, '0')}`;
 }
 
-/**
- * Bake a labelled rounded-rect placeholder into a CanvasTexture.
- * Done once per symbol at load — never inside the ticker.
- *
- * @param {typeof PIXI} PIXI
- * @param {typeof SYMBOL_DEFS[SymbolId]} def
- * @param {number} size
- * @returns {PIXI.Texture}
- */
-function createFallbackTexture(PIXI, def, size = ASSET_SYMBOL_SIZE) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return PIXI.Texture.WHITE;
-  }
-
-  const pad = 4;
-  const radius = 10;
-
-  // Transparent plate + neon body
-  ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = toCssHex(def.color);
-  roundRectPath(ctx, pad, pad, size - pad * 2, size - pad * 2, radius);
-  ctx.fill();
-
-  // Inner bevel (cyber panel)
-  ctx.strokeStyle = toCssHex(def.accent);
-  ctx.lineWidth = 2;
-  roundRectPath(ctx, pad + 4, pad + 4, size - (pad + 4) * 2, size - (pad + 4) * 2, radius - 3);
-  ctx.stroke();
-
-  // Corner tech ticks
-  ctx.strokeStyle = toCssHex(def.accent);
-  ctx.lineWidth = 1.5;
-  const t = pad + 8;
-  ctx.beginPath();
-  ctx.moveTo(t, t + 8);
-  ctx.lineTo(t, t);
-  ctx.lineTo(t + 8, t);
-  ctx.moveTo(size - t, t + 8);
-  ctx.lineTo(size - t, t);
-  ctx.lineTo(size - t - 8, t);
-  ctx.stroke();
-
-  // Labels
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#e8fbff';
-  ctx.font = '700 16px Orbitron, system-ui, sans-serif';
-  ctx.fillText(def.label, size * 0.5, size * 0.46);
-
-  ctx.font = '600 9px Orbitron, system-ui, sans-serif';
-  ctx.globalAlpha = 0.7;
-  ctx.fillStyle = toCssHex(def.accent);
-  ctx.fillText(def.id, size * 0.5, size * 0.66);
-  ctx.globalAlpha = 1;
-
-  const texture = PIXI.Texture.from(canvas);
-  texture.label = `fallback:${def.id}`;
-  return texture;
-}
-
-/**
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} x
- * @param {number} y
- * @param {number} w
- * @param {number} h
- * @param {number} r
- */
 function roundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w * 0.5, h * 0.5);
   ctx.beginPath();
@@ -211,13 +110,38 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/**
- * Try to load an image URL; resolve null on any failure (404 / CORS / network).
- * @param {typeof PIXI} PIXI
- * @param {string} alias
- * @param {string} src
- * @returns {Promise<PIXI.Texture|null>}
- */
+function createFallbackTexture(PIXI, def, size = ASSET_SYMBOL_SIZE) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return PIXI.Texture.WHITE;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#0c121c';
+  roundRectPath(ctx, 4, 4, size - 8, size - 8, 14);
+  ctx.fill();
+  ctx.fillStyle = toCssHex(def.color);
+  roundRectPath(ctx, 10, 10, size - 20, size - 20, 10);
+  ctx.fill();
+  ctx.strokeStyle = toCssHex(def.accent);
+  ctx.lineWidth = 3;
+  roundRectPath(ctx, 8, 8, size - 16, size - 16, 12);
+  ctx.stroke();
+  ctx.fillStyle = '#e8fbff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 18px Orbitron, system-ui, sans-serif';
+  ctx.fillText(def.label, size * 0.5, size * 0.48);
+  ctx.fillStyle = toCssHex(def.accent);
+  ctx.font = '600 11px Orbitron, system-ui, sans-serif';
+  ctx.fillText(def.id, size * 0.5, size * 0.68);
+
+  const texture = PIXI.Texture.from(canvas);
+  texture.label = `fallback:${def.id}`;
+  return texture;
+}
+
 async function tryLoadTexture(PIXI, alias, src) {
   try {
     const texture = await PIXI.Assets.load({ alias, src });
@@ -225,27 +149,25 @@ async function tryLoadTexture(PIXI, alias, src) {
       return /** @type {PIXI.Texture} */ (texture);
     }
   } catch {
-    // Expected when art files are not present yet.
+    /* missing art → fallback */
   }
   return null;
 }
 
-/**
- * AssetManager — singleton-style loader used by the reel engine.
- */
 export class AssetManager {
   constructor() {
     /** @type {Map<SymbolId, PIXI.Texture>} */
     this.textures = new Map();
     /** @type {Set<SymbolId>} */
     this.fallbackIds = new Set();
+    /** @type {PIXI.Texture|null} */
+    this.brandLogo = null;
     this.loaded = false;
     /** @type {typeof PIXI|null} */
     this._PIXI = null;
   }
 
   /**
-   * Load all symbol textures (image → fallback).
    * @param {typeof PIXI} PIXI
    * @param {{ onProgress?: (ratio: number, label: string) => void, symbolSize?: number }} [opts]
    */
@@ -254,15 +176,17 @@ export class AssetManager {
     const onProgress = opts.onProgress ?? (() => {});
     const size = opts.symbolSize ?? ASSET_SYMBOL_SIZE;
     const ids = /** @type {SymbolId[]} */ (Object.keys(SYMBOL_DEFS));
-    const total = ids.length;
+    const total = ids.length + 1;
 
-    onProgress(0.05, 'Loading symbols…');
+    onProgress(0.04, 'Initializing Robo 5000…');
+
+    this.brandLogo = await tryLoadTexture(PIXI, 'brand:limitless', BRAND_LOGO_SRC);
+    onProgress(1 / total, 'Limitless Studio brand loaded');
 
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       const def = SYMBOL_DEFS[id];
-      onProgress(0.05 + (i / total) * 0.85, `Loading ${def.name}…`);
-
+      onProgress((i + 1) / total, `Loading ${def.name}…`);
       let texture = await tryLoadTexture(PIXI, `sym:${id}`, def.src);
       if (!texture) {
         texture = createFallbackTexture(PIXI, def, size);
@@ -272,24 +196,19 @@ export class AssetManager {
     }
 
     this.loaded = true;
-    onProgress(1, this.fallbackIds.size === total ? 'Using placeholder art' : 'Assets ready');
+    onProgress(1, 'Systems online');
     console.info(
-      '[assets] loaded %d symbols (%d fallback placeholders)',
+      '[assets] Robo 5000 — %d symbols (%d fallbacks), brand=%s',
       this.textures.size,
       this.fallbackIds.size,
+      this.brandLogo ? 'ok' : 'missing',
     );
     return this;
   }
 
-  /**
-   * @param {SymbolId|string} id
-   * @returns {PIXI.Texture}
-   */
+  /** @param {SymbolId|string} id */
   getTexture(id) {
-    const tex = this.textures.get(/** @type {SymbolId} */ (id));
-    if (tex) return tex;
-    // Last-resort white pixel — should not happen after load()
-    return this._PIXI?.Texture.WHITE ?? /** @type {any} */ (null);
+    return this.textures.get(/** @type {SymbolId} */ (id)) ?? this._PIXI?.Texture.WHITE;
   }
 
   /** @param {SymbolId|string} id */
@@ -301,14 +220,7 @@ export class AssetManager {
   randomId() {
     return SYMBOL_IDS[(Math.random() * SYMBOL_IDS.length) | 0];
   }
-
-  /** True when every symbol is a generated placeholder. */
-  get usingFallbacksOnly() {
-    return this.fallbackIds.size === SYMBOL_IDS.length;
-  }
 }
 
-/** Shared instance — import this from game / reels. */
 export const assets = new AssetManager();
-
 export default assets;

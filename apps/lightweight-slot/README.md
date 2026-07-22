@@ -1,45 +1,51 @@
-# Cyber Reels — Lightweight Slot
+# Robo 5000 — Limitless Studio
 
-5×3 robotic / cyberpunk slot built on the `apps/lightweight-slot` Pixi.js template.
+Production-ready **5×5 high-volatility** cyberpunk slot built on the lightweight Pixi.js template.
 
 | Spec | Value |
 |------|-------|
-| Grid | 5 reels × 3 rows |
-| Paylines | 20 fixed |
-| Target RTP | **96%** (`TARGET_RTP = 0.96`) |
-| Max win | **5000×** bet (`MAX_WIN_MULT = 5000`) |
-| Renderer | Pixi.js v8 (CDN), WebGL, 60 FPS cap, DPR ≤ 1.5 |
+| Grid | **5 reels × 5 rows** |
+| Paylines | 20 fixed (L→R) |
+| Volatility | High |
+| RTP | **96%** |
+| Max win | **5000×** bet |
+| Studio | Limitless Studio |
+
+## Features
+
+- Animated **Limitless Studio** splash + neon load bar
+- Demo balance **$1,000.00** with live debit/credit
+- Bet ladder **$0.20 – $100.00** (`+` / `−`)
+- **Ante (3×)** — boosted scatter rates
+- **Buy Bonus (100×)** — 10 Free Spins
+- **Super Buy (300×)** — Super Free Spins with **sticky wild multipliers** (2×–100×)
+- Functional spin with stagger stop, SFX cues, win highlights
+- Royalty-free procedural cyberpunk symbols (compact PNGs)
 
 ## Run locally
 
-From this folder:
-
 ```bash
+cd apps/lightweight-slot
 npx serve
 # or
-npm run serve
-```
-
-Then open the URL printed by `serve` (default port **5179** via `npm run serve`).
-
-Fallback without `npx`:
-
-```bash
-npm run serve:python
+npm run serve   # http://localhost:5179
 ```
 
 ## Layout
 
 ```
 apps/lightweight-slot/
-  index.html              # boot shell + Pixi CDN
-  package.json            # serve scripts
-  assets/symbols/*.png    # lightweight robotic 2D symbols (~0.6–0.9 KB each)
+  index.html
+  package.json
+  assets/
+    brand/limitless-studio.png
+    symbols/*.png
   src/
-    game.js               # bootstrap, HUD, spin loop
-    reels.js              # 5×3 reel engine (pooled sprites)
-    math.js               # RTP / paytable / evaluateSpin
-    assets.js             # symbol loader + fallbacks
+    game.js      # splash handoff, HUD, balance, buys
+    reels.js     # 5×5 reel engine
+    math.js      # high-vol math + ante/buy/super
+    assets.js    # texture loader
+    audio.js     # Web Audio cues
 ```
 
-Math is pure JS — open the browser console and call `__SLOT__.evaluateSpin(1, 12345)` or `__SLOT__.getDesignParams()`.
+Debug API (browser console): `__SLOT__.getDesignParams()`, `__SLOT__.evaluateSpin(1, 42)`.

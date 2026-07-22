@@ -1,9 +1,9 @@
 {
-  "name": "lightweight-slot",
-  "version": "0.0.1",
+  "name": "robo-5000",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Lightweight 5×3 robotic/cyberpunk Pixi.js slot (CDN, mobile-first, 96% RTP)",
+  "description": "Robo 5000 by Limitless Studio — 5×5 high-volatility cyberpunk slot (96% RTP, 5000× max)",
   "scripts": {
     "start": "npx --yes serve . -l 5179",
     "serve": "npx --yes serve . -l 5179",
