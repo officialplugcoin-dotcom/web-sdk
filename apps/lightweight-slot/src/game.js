@@ -202,10 +202,11 @@ function createHUD(PIXI, parent, api) {
       text: label,
       style: {
         fontFamily: FONT,
-        fontSize: Math.min(22, Math.floor(w / (label.length * 0.55))),
+        fontSize: label.includes('\n') ? 14 : Math.min(26, Math.floor(w / Math.max(label.length, 1) * 1.1)),
         fontWeight: '800',
         fill: 0xe8fbff,
         align: 'center',
+        lineHeight: 18,
       },
     });
     text.anchor.set(0.5);
@@ -382,9 +383,9 @@ async function main() {
     parent: stageRoot,
     onReelLand: (i) => sfx.reelStop(i),
   });
-  reels.centerIn(DESIGN_WIDTH, 1280);
-  // Nudge board under header
-  reels.root.y = Math.round((1100 - reels.height) * 0.5 + 40);
+  reels.centerIn(DESIGN_WIDTH, DESIGN_HEIGHT);
+  // Sit the 5×5 board between header (~180) and control dock (~1260)
+  reels.root.y = Math.round(180 + (1000 - reels.height) * 0.5);
 
   function spinCost() {
     if (freeSpinsRemaining > 0) return 0;
